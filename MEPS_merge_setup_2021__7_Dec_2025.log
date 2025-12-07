@@ -1,0 +1,3864 @@
+
+  log type:  text
+ opened on:   7 Dec 2025, 15:31:52
+
+. 
+. 
+. set more off
+
+. 
+. 
+. **# Step 2 - Merge Plan 
+. *-- 3. Begin data merging steps  --* 
+. /*
+> h233, h243, h251.dta: Full-year consolidated files for 2021, 2022, 2023 (person-level core).
+> h231, h241, h249.dta: Medical Conditions files for 2021, 2022, 2023.
+> h229g, h239g, h248g.dta: Office-Based Provider Visits files (2021–2023 event files).
+> h229f, h239f, h248f.dta: Outpatient Department Visits files (2021–2023 event files).
+> h229e, h239e, h248e.dta: Emergency Room Visits files (2021–2023 event files).
+> */
+. 
+. 
+. 
+. 
+. 
+. *******************************
+. **#  2021 MEPS
+. /******************************
+>   MEPS 2021 File Merge
+>   This code block merges 2021 full-year consolidated file (h233.dta)
+>   with event-level files: office-based (h229g), outpatient (h229f), 
+>   emergency (h229e), and sets up for merging with the conditions file (h231).
+>   All files are assumed to be in your $datadir directory.
+>   
+> - h233.dta      Main consolidated person-level file (2021)
+> - h231.dta      Medical conditions file (2021)
+> - h229g.dta     Office-based provider visits (2021)
+> - h229f.dta     Outpatient department visits (2021)
+> - h229e.dta     Emergency room visits (2021)
+> ***********************************************************************/
+. 
+. 
+. **# --> Step 2 h233 - FYC
+. use "$datadir/h233.dta", clear
+
+. 
+. describe DUPERSID DUID // Check format
+
+Variable      Storage   Display    Value
+    name         type    format    label      Variable label
+--------------------------------------------------------------------------------------------------
+DUPERSID        str10   %10s                  PERSON ID (DUID + PID)
+DUID            long    %12.0g                PANEL # + ENCRYPTED DU IDENTIFIER
+
+. tostring DUID, replace
+DUID was long now str7
+
+. sort DUPERSID // Sort 
+
+. count // Count --> 28,336
+  28,336
+
+. 
+. describe DUPERSID PERWT21F VARSTR VARPSU AGE21X SEX RACEV2X REGION21 ///
+>      POVCAT  INSCOV EDUCYR  MARRY21X
+
+Variable      Storage   Display    Value
+    name         type    format    label      Variable label
+--------------------------------------------------------------------------------------------------
+DUPERSID        str10   %10s                  PERSON ID (DUID + PID)
+PERWT21F        double  %10.0g                FINAL PERSON WEIGHT, 2021
+VARSTR          int     %8.0g                 VARIANCE ESTIMATION STRATUM, 2021
+VARPSU          byte    %8.0g                 VARIANCE ESTIMATION PSU, 2021
+AGE21X          byte    %8.0g                 AGE AS OF 12/31/21 (EDITED/IMPUTED)
+SEX             byte    %22.0g     H2331012X
+                                              SEX
+RACEV2X         byte    %43.0g     H2330900X
+                                              RACE (EDITED/IMPUTED)
+REGION21        byte    %15.0g     H2330908X
+                                              CENSUS REGION AS OF 12/31/21
+POVCAT21        byte    %15.0g     H2330794X
+                                              FAMILY INC AS % OF POVERTY LINE - CATEGORICAL
+INSCOV21        byte    %15.0g     H2330510X
+                                              HEALTH INSURANCE COVERAGE INDICATOR 2021
+EDUCYR          int     %29.0g     H2330247X
+                                              YEARS OF EDUC WHEN FIRST ENTERED MEPS
+MARRY21X        byte    %29.0g     H2330542X
+                                              MARITAL STATUS-12/31/21 (EDITED/IMPUTED)
+
+. 
+. foreach v of varlist AGE21X SEX RACEV2X INSCOV ///
+>                      EDUCYR MARRY21X POVCAT ///
+>                      REGION21 {
+  2.     replace `v' = . if `v' < 0
+  3. }        
+(233 real changes made, 233 to missing)
+(0 real changes made)
+(0 real changes made)
+(0 real changes made)
+(2,143 real changes made, 2,143 to missing)
+(12 real changes made, 12 to missing)
+(0 real changes made)
+(233 real changes made, 233 to missing)
+
+.          
+. * Age continous
+. gen age  = AGE21X
+(233 missing values generated)
+
+.          
+. * Age categories (optional but helpful for models)
+. gen age_cat = .
+(28,336 missing values generated)
+
+. replace age_cat = 1 if AGE21X < 6
+(1,589 real changes made)
+
+. replace age_cat = 2 if AGE21X >= 6 & AGE21X <= 11
+(1,946 real changes made)
+
+. replace age_cat = 3 if AGE21X >= 12 & AGE21X <= 17
+(2,016 real changes made)
+
+. replace age_cat = 4 if AGE21X >= 18
+(22,785 real changes made)
+
+. 
+. label define agecatlbl 1 "<6" 2 "6–11" 3 "12–17" 4 "18+"
+
+. label values age_cat agecatlbl
+
+. 
+. * Gender
+. gen female = (SEX == 2)
+
+. label define femlbl 0 "Male" 1 "Female"
+
+. label values female femlbl
+
+. 
+. 
+. * Race
+. capture drop race_eth
+
+. gen race_eth = .
+(28,336 missing values generated)
+
+. replace race_eth = 1 if HISPANX == 1 // * 1. Hispanic (Any Race)
+(6,798 real changes made)
+
+. replace race_eth = 2 if HISPANX == 2 & RACEV2X == 1 // * 2. Non-Hispanic White
+(15,023 real changes made)
+
+. replace race_eth = 3 if HISPANX == 2 & RACEV2X == 2 // * 3. Non-Hispanic Black
+(4,071 real changes made)
+
+. replace race_eth = 4 if HISPANX == 2 & inlist(RACEV2X, 4, 5, 6, 10)
+(1,478 real changes made)
+
+. replace race_eth = 5 if HISPANX == 2 & inlist(RACEV2X, 3, 12)
+(966 real changes made)
+
+. label define race5lbl 1 "Hispanic" 2 "NH White" 3 "NH Black" 4 "NH Asian" 5 "NH Other/Multiple"
+
+. label values race_eth race5lbl
+
+. 
+. * QC Check
+. tab race_eth, missing
+
+         race_eth |      Freq.     Percent        Cum.
+------------------+-----------------------------------
+         Hispanic |      6,798       23.99       23.99
+         NH White |     15,023       53.02       77.01
+         NH Black |      4,071       14.37       91.37
+         NH Asian |      1,478        5.22       96.59
+NH Other/Multiple |        966        3.41      100.00
+------------------+-----------------------------------
+            Total |     28,336      100.00
+
+. 
+. 
+. * Insurance
+. gen insurance = INSCOV
+
+. label define inslbl 1 "Private" 2 "Public only" 3 "Uninsured"
+
+. label values insurance inslbl
+
+. 
+. 
+. * Poverty
+. capture drop povcat
+
+. gen povcat = .
+(28,336 missing values generated)
+
+. replace povcat = 1 if POVCAT == 1
+(4,942 real changes made)
+
+. replace povcat = 2 if POVCAT == 2 | POVCAT == 3
+(5,473 real changes made)
+
+. replace povcat = 3 if POVCAT == 4
+(7,858 real changes made)
+
+. replace povcat = 4 if POVCAT == 5
+(10,063 real changes made)
+
+. label define povclean_lbl 1 "<100% (Poor)" 2 "100–199% (Low Income)" 3 "200–399% (Middle)" 4 "40
+> 0%+ (High)"
+
+. label values povcat povclean_lbl
+
+. tab POVCAT povcat, missing
+
+FAMILY INC AS % |
+OF POVERTY LINE |                   povcat
+  - CATEGORICAL | <100% (Po  100–199%   200–399%   400%+ (Hi |     Total
+----------------+--------------------------------------------+----------
+1 POOR/NEGATIVE |     4,942          0          0          0 |     4,942 
+    2 NEAR POOR |         0      1,486          0          0 |     1,486 
+   3 LOW INCOME |         0      3,987          0          0 |     3,987 
+4 MIDDLE INCOME |         0          0      7,858          0 |     7,858 
+  5 HIGH INCOME |         0          0          0     10,063 |    10,063 
+----------------+--------------------------------------------+----------
+          Total |     4,942      5,473      7,858     10,063 |    28,336 
+
+. 
+. 
+. * Education 
+. gen education_years  = EDUCYR  // continuous years
+(2,143 missing values generated)
+
+. 
+. 
+. * Family Size
+. gen family_size_cat = .
+(28,336 missing values generated)
+
+. replace family_size_cat = 1 if FAMSZEYR == 1
+(5,881 real changes made)
+
+. replace family_size_cat = 2 if FAMSZEYR == 2
+(7,918 real changes made)
+
+. replace family_size_cat = 3 if FAMSZEYR == 3
+(4,768 real changes made)
+
+. replace family_size_cat = 4 if FAMSZEYR >= 4
+(9,769 real changes made)
+
+. 
+. label define fsize_lbl 1 "1-person" 2 "2-person" 3 "3-person" 4 "4+ persons"
+
+. label values family_size_cat fsize_lbl
+
+. 
+. 
+. * Convert region indicators to single REGION variable
+. gen region = .
+(28,336 missing values generated)
+
+. replace region = 1 if REGION21 == 1      // Northeast
+(4,403 real changes made)
+
+. replace region = 2 if REGION21 == 2      // Midwest
+(5,434 real changes made)
+
+. replace region = 3 if REGION21 == 3      // South
+(10,738 real changes made)
+
+. replace region = 4 if REGION21 == 4      // West
+(7,528 real changes made)
+
+. 
+. label define reg 1 "Northeast" 2 "Midwest" 3 "South" 4 "West"
+
+. label values region reg
+
+. 
+. 
+. gen year = 2021
+
+. 
+. **# --> [NEW] ADDITIONAL Covariates
+. ********************************************************
+. * 1. General Health Status (Parent Reported)
+. * Variable: RTHLTH42 (1=Ex, 2=VG, 3=G, 4=Fair, 5=Poor)
+. * We create a binary flag for "Fair/Poor Health" (High Need)
+. gen health_status = .
+(28,336 missing values generated)
+
+. replace health_status = 1 if RTHLTH42 <= 3  // Excellent/VG/Good
+(24,864 real changes made)
+
+. replace health_status = 2 if RTHLTH42 == 4 | RTHLTH42 == 5 // Fair/Poor
+(3,472 real changes made)
+
+. label define hlthlbl 1 "Excellent/VG/Good" 2 "Fair/Poor"
+
+. label values health_status hlthlbl
+
+. 
+. * 2. Mental Health Status (Parent Reported)
+. * Variable: MNHLTH42 (1=Ex, 2=VG, 3=G, 4=Fair, 5=Poor)
+. gen mental_health = .
+(28,336 missing values generated)
+
+. replace mental_health = 1 if MNHLTH42 <= 3 // Excellent/VG/Good
+(25,596 real changes made)
+
+. replace mental_health = 2 if MNHLTH42 == 4 | MNHLTH42 == 5 // Fair/Poor
+(2,740 real changes made)
+
+. label define mhlthlbl 1 "Excellent/VG/Good" 2 "Fair/Poor"
+
+. label values mental_health mhlthlbl
+
+. 
+. * 3. CSHCN: Children with Special Health Care Needs (Composite)
+. * CSHCN implies chronic need. Defined by "Yes" to any of the 5 screeners.
+. * Variables: CHCOUN42, CHEMPB42, CHPMHB42, CHLIMI42, CHSERV42
+. gen cshcn = 0
+
+. foreach v in CHCOUN42 CHEMPB42 CHPMHB42 CHLIMI42 CHSERV42 {
+  2.     * In MEPS: 1=YES, 2=NO. We flag if ANY are 1.
+.     replace cshcn = 1 if `v' == 1
+  3. }
+(379 real changes made)
+(0 real changes made)
+(348 real changes made)
+(65 real changes made)
+(63 real changes made)
+
+. label variable cshcn "Child with Special Health Care Needs (CSHCN)"
+
+. label define yesno 0 "No" 1 "Yes"
+
+. label values cshcn yesno
+
+. 
+. * 4. Language of Interview (Access Barrier)
+. * Variable: INTVLANG (1=English, 2=Spanish, etc.)
+. gen language_barrier = 0
+
+. replace language_barrier = 1 if INTVLANG != 1 & !missing(INTVLANG)
+(3,683 real changes made)
+
+. label variable language_barrier "Interview not in English"
+
+. 
+. tab language_barrier
+
+  Interview |
+     not in |
+    English |      Freq.     Percent        Cum.
+------------+-----------------------------------
+          0 |     24,653       87.00       87.00
+          1 |      3,683       13.00      100.00
+------------+-----------------------------------
+      Total |     28,336      100.00
+
+. tab cshcn
+
+ Child with |
+    Special |
+Health Care |
+      Needs |
+    (CSHCN) |      Freq.     Percent        Cum.
+------------+-----------------------------------
+         No |     27,481       96.98       96.98
+        Yes |        855        3.02      100.00
+------------+-----------------------------------
+      Total |     28,336      100.00
+
+. tab mental_health
+
+    mental_health |      Freq.     Percent        Cum.
+------------------+-----------------------------------
+Excellent/VG/Good |     25,596       90.33       90.33
+        Fair/Poor |      2,740        9.67      100.00
+------------------+-----------------------------------
+            Total |     28,336      100.00
+
+. tab health_status
+
+    health_status |      Freq.     Percent        Cum.
+------------------+-----------------------------------
+Excellent/VG/Good |     24,864       87.75       87.75
+        Fair/Poor |      3,472       12.25      100.00
+------------------+-----------------------------------
+            Total |     28,336      100.00
+
+. 
+. * Save cleaned 2021 person-level dataset
+. save "$outdir/person_2021_clean.dta", replace
+
+. 
+. 
+. 
+. **# --> Step 3 h229g h229f h229E - Visit Type
+. 
+. * OFFICE
+. **************************************************************
+. ** Cleaning DUID str7 vs long type
+. use "$datadir/h229g.dta", clear
+
+. * Inspect variables
+. describe DUPERSID EVNTIDX TELEHEALTHFLAG VISITTYPE
+
+Variable      Storage   Display    Value
+    name         type    format    label      Variable label
+--------------------------------------------------------------------------------------------------
+DUPERSID        str10   %10s                  PERSON ID (DUID + PID)
+EVNTIDX         str16   %16s                  EVENT ID
+TELEHEALTHFLAG  byte    %22.0g     H229G0024X
+                                              IS THIS A TELEHEALTH EVENT
+VISITTYPE       byte    %16.0g     H229G0025X
+                                              TYPE OF TELEHEALTH VISIT
+
+. gen year = 2021
+
+. * Create telehealth indicator
+. gen tele = TELEHEALTHFLAG == 1
+
+. * Create in-person indicator
+. gen inperson = 1 - tele
+
+. save "$outdir/ob_2021_clean.dta", replace
+
+
+. 
+. * OUTPATIENT
+. **************************************************************
+. use "$datadir/h229f.dta", clear
+
+. describe DUPERSID EVNTIDX TELEHEALTHFLAG VISITTYPE
+
+Variable      Storage   Display    Value
+    name         type    format    label      Variable label
+--------------------------------------------------------------------------------------------------
+DUPERSID        str10   %10s                  PERSON ID (DUID + PID)
+EVNTIDX         str16   %16s                  EVENT ID
+TELEHEALTHFLAG  byte    %8.0g                 IS THIS A TELEHEALTH EVENT
+VISITTYPE       byte    %8.0g                 TYPE OF TELEHEALTH VISIT
+
+. gen year = 2021
+
+. * Telehealth indicator
+. gen tele = TELEHEALTHFLAG == 1
+
+. * In-person indicator
+. gen inperson = 1 - tele
+
+. save "$outdir/op_2021_clean.dta", replace
+
+
+. 
+. * COMBINE
+. **************************************************************
+. use "$outdir/ob_2021_clean.dta", clear
+
+. append using "$outdir/op_2021_clean.dta"
+
+. 
+. * Check
+. tab tele
+
+       tele |      Freq.     Percent        Cum.
+------------+-----------------------------------
+          0 |    210,282       90.63       90.63
+          1 |     21,750        9.37      100.00
+------------+-----------------------------------
+      Total |    232,032      100.00
+
+. tab inperson
+
+   inperson |      Freq.     Percent        Cum.
+------------+-----------------------------------
+          0 |     21,750        9.37        9.37
+          1 |    210,282       90.63      100.00
+------------+-----------------------------------
+      Total |    232,032      100.00
+
+. 
+. save "$outdir/events_2021_all.dta", replace
+
+
+. 
+. 
+. 
+. **# --> Step 4: Collapse 2021 events to person-year
+. use "$outdir/events_2021_all.dta", clear
+
+. 
+. * Numeric placeholder for counting events
+. gen evnum = 1
+
+. 
+. collapse ///
+>     (sum) tele tele_visits=tele ///
+>     (sum) inperson inperson_visits=inperson ///
+>     (count) total_visits=evnum ///
+>     (max) any_tele=tele, by(DUPERSID year)
+
+. 
+. gen tele_share = tele_visits / total_visits
+
+. replace tele_share = 0 if total_visits == 0
+(0 real changes made)
+
+. 
+. save "$outdir/event_summary_2021.dta", replace
+
+
+. 
+. // QC 
+. summarize tele_visits inperson_visits total_visits tele_share 
+
+    Variable |        Obs        Mean    Std. dev.       Min        Max
+-------------+---------------------------------------------------------
+ tele_visits |     21,853    .9952867    5.234281          0        303
+inperson_v~s |     21,853    9.622569    15.57532          0        418
+total_visits |     21,853    10.61786    16.95488          1        418
+  tele_share |     21,853    .0571973    .1713835          0          1
+
+. tab any_tele
+
+ (max) tele |      Freq.     Percent        Cum.
+------------+-----------------------------------
+          0 |     17,990       82.32       82.32
+          1 |      3,863       17.68      100.00
+------------+-----------------------------------
+      Total |     21,853      100.00
+
+. 
+. 
+. 
+. **# --> Step 5 - Merge Back
+. * Merge person-level 2021 file with event-derived outcomes
+. use "$outdir/person_2021_clean.dta", clear
+
+. merge 1:1 DUPERSID using "$outdir/event_summary_2021.dta"
+
+    Result                      Number of obs
+    -----------------------------------------
+    Not matched                         6,483
+        from master                     6,483  (_merge==1)
+        from using                          0  (_merge==2)
+
+    Matched                            21,853  (_merge==3)
+    -----------------------------------------
+
+. 
+. * FIX: Drop event-summary rows that have no matching person
+. drop if _merge == 2
+(0 observations deleted)
+
+. 
+. * Set zeros for those with no visits
+. replace tele_visits = 0 if missing(tele_visits)
+(6,483 real changes made)
+
+. replace inperson_visits = 0 if missing(inperson_visits)
+(6,483 real changes made)
+
+. replace total_visits = 0 if missing(total_visits)
+(6,483 real changes made)
+
+. replace any_tele = 0 if missing(any_tele)
+(6,483 real changes made)
+
+. replace tele_share = 0 if missing(tele_share)
+(6,483 real changes made)
+
+. 
+. drop _merge
+
+. 
+. save "$outdir/analytic_2021.dta", replace
+
+
+. 
+. 
+. // QC 
+. count
+  28,336
+
+. summarize age tele_visits inperson_visits total_visits tele_share
+
+    Variable |        Obs        Mean    Std. dev.       Min        Max
+-------------+---------------------------------------------------------
+         age |     28,103    42.98765    23.82445          0         85
+ tele_visits |     28,336    .7675748     4.61562          0        303
+inperson_v~s |     28,336    7.421019     14.2627          0        418
+total_visits |     28,336    8.188594    15.54312          0        418
+  tele_share |     28,336    .0441111    .1524114          0          1
+
+. tab age_cat 
+
+    age_cat |      Freq.     Percent        Cum.
+------------+-----------------------------------
+         <6 |      1,589        5.61        5.61
+       6–11 |      1,946        6.87       12.48
+      12–17 |      2,016        7.11       19.59
+        18+ |     22,785       80.41      100.00
+------------+-----------------------------------
+      Total |     28,336      100.00
+
+. tab any_tele
+
+ (max) tele |      Freq.     Percent        Cum.
+------------+-----------------------------------
+          0 |     24,473       86.37       86.37
+          1 |      3,863       13.63      100.00
+------------+-----------------------------------
+      Total |     28,336      100.00
+
+. 
+. tab age_cat any_tele
+
+           |      (max) tele
+   age_cat |         0          1 |     Total
+-----------+----------------------+----------
+        <6 |     1,507         82 |     1,589 
+      6–11 |     1,806        140 |     1,946 
+     12–17 |     1,858        158 |     2,016 
+       18+ |    19,302      3,483 |    22,785 
+-----------+----------------------+----------
+     Total |    24,473      3,863 |    28,336 
+
+. 
+. 
+. **# --> Step 6: SAVE ONLY
+. use "$outdir/analytic_2021.dta", clear
+
+. 
+. keep ///
+>     DUPERSID year PERWT21F VARSTR VARPSU /// survey design
+>     age age_cat female race_eth insurance povcat education_years ///
+>     family_size_cat region /// demographics & SES
+>     tele_visits inperson_visits total_visits tele_share any_tele  /// outcomes
+>         health_status mental_health cshcn language_barrier
+
+. 
+. order DUPERSID year age age_cat female race_eth insurance povcat ///
+>       tele_visits inperson_visits total_visits tele_share any_tele
+
+. 
+. save "$outdir/analytic_2021_cleanvars.dta", replace
+
+
+. count
+  28,336
+
+. 
+. 
+. 
+. 
+. 
+. *******************************
+. **#  2022 MEPS
+. /******************************
+>   FILE REFERENCES (2022)
+>   - h243.dta : Full-year consolidated (person-level)
+>   - h241.dta : Medical conditions
+>   - h239g.dta: Office-based provider visits
+>   - h239f.dta: Outpatient visits
+>   - h239e.dta: Emergency room visits
+>   - h239if1.dta: Condition–event link file
+> ***********************************************************************/
+. 
+. *******************************************************************************
+. **# --> STEP 1: Prepare 2022 person-level dataset (h243.dta)
+. *******************************************************************************
+. 
+. use "$datadir/h243.dta", clear
+
+. count
+  22,431
+
+. * Clean negative values
+. foreach v of varlist AGE22X SEX RACEV2X INSCOV POVCAT EDUCYR MARRY22X REGION22 {
+  2.     replace `v' = . if `v' < 0
+  3. }
+(195 real changes made, 195 to missing)
+(0 real changes made)
+(0 real changes made)
+(0 real changes made)
+(0 real changes made)
+(1,538 real changes made, 1,538 to missing)
+(7 real changes made, 7 to missing)
+(195 real changes made, 195 to missing)
+
+. 
+. * Age
+. gen age  = AGE22X
+(195 missing values generated)
+
+. 
+. gen age_cat = .
+(22,431 missing values generated)
+
+. replace age_cat = 1 if AGE22X < 6
+(1,200 real changes made)
+
+. replace age_cat = 2 if AGE22X >= 6 & AGE22X <= 11
+(1,516 real changes made)
+
+. replace age_cat = 3 if AGE22X >= 12 & AGE22X <= 17
+(1,611 real changes made)
+
+. replace age_cat = 4 if AGE22X >= 18
+(18,104 real changes made)
+
+. label define agecatlbl 1 "<6" 2 "6–11" 3 "12–17" 4 "18+"
+
+. label values age_cat agecatlbl
+
+. tab age_cat
+
+    age_cat |      Freq.     Percent        Cum.
+------------+-----------------------------------
+         <6 |      1,200        5.35        5.35
+       6–11 |      1,516        6.76       12.11
+      12–17 |      1,611        7.18       19.29
+        18+ |     18,104       80.71      100.00
+------------+-----------------------------------
+      Total |     22,431      100.00
+
+. 
+. * Female
+. gen female = (SEX == 2)
+
+. label define femlbl 0 "Male" 1 "Female"
+
+. label values female femlbl
+
+. tab female
+
+     female |      Freq.     Percent        Cum.
+------------+-----------------------------------
+       Male |     10,608       47.29       47.29
+     Female |     11,823       52.71      100.00
+------------+-----------------------------------
+      Total |     22,431      100.00
+
+. 
+. * Race/Ethnicity
+. capture drop race_eth
+
+. gen race_eth = .
+(22,431 missing values generated)
+
+. replace race_eth = 1 if HISPANX == 1 // * 1. Hispanic (Any Race)
+(4,883 real changes made)
+
+. replace race_eth = 2 if HISPANX == 2 & RACEV2X == 1 // * 2. Non-Hispanic White
+(12,211 real changes made)
+
+. replace race_eth = 3 if HISPANX == 2 & RACEV2X == 2 // * 3. Non-Hispanic Black
+(3,244 real changes made)
+
+. replace race_eth = 4 if HISPANX == 2 & inlist(RACEV2X, 4, 5, 6, 10)
+(1,270 real changes made)
+
+. replace race_eth = 5 if HISPANX == 2 & inlist(RACEV2X, 3, 12)
+(823 real changes made)
+
+. label define race5lbl 1 "Hispanic" 2 "NH White" 3 "NH Black" 4 "NH Asian" 5 "NH Other/Multiple"
+
+. label values race_eth race5lbl
+
+. 
+. * QC Check
+. tab race_eth, missing
+
+         race_eth |      Freq.     Percent        Cum.
+------------------+-----------------------------------
+         Hispanic |      4,883       21.77       21.77
+         NH White |     12,211       54.44       76.21
+         NH Black |      3,244       14.46       90.67
+         NH Asian |      1,270        5.66       96.33
+NH Other/Multiple |        823        3.67      100.00
+------------------+-----------------------------------
+            Total |     22,431      100.00
+
+. 
+. 
+. * Insurance
+. gen insurance = INSCOV
+
+. label define inslbl 1 "Private" 2 "Public only" 3 "Uninsured"
+
+. label values insurance inslbl
+
+. 
+. * Poverty
+. capture drop povcat
+
+. gen povcat = .
+(22,431 missing values generated)
+
+. replace povcat = 1 if POVCAT == 1
+(3,725 real changes made)
+
+. replace povcat = 2 if POVCAT == 2 | POVCAT == 3
+(4,155 real changes made)
+
+. replace povcat = 3 if POVCAT == 4
+(6,269 real changes made)
+
+. replace povcat = 4 if POVCAT == 5
+(8,282 real changes made)
+
+. label define povclean_lbl 1 "<100% (Poor)" 2 "100–199% (Low Income)" 3 "200–399% (Middle)" 4 "40
+> 0%+ (High)"
+
+. label values povcat povclean_lbl
+
+. tab POVCAT povcat, missing
+
+FAMILY INC AS % |
+OF POVERTY LINE |                   povcat
+  - CATEGORICAL | <100% (Po  100–199%   200–399%   400%+ (Hi |     Total
+----------------+--------------------------------------------+----------
+1 POOR/NEGATIVE |     3,725          0          0          0 |     3,725 
+    2 NEAR POOR |         0      1,050          0          0 |     1,050 
+   3 LOW INCOME |         0      3,105          0          0 |     3,105 
+4 MIDDLE INCOME |         0          0      6,269          0 |     6,269 
+  5 HIGH INCOME |         0          0          0      8,282 |     8,282 
+----------------+--------------------------------------------+----------
+          Total |     3,725      4,155      6,269      8,282 |    22,431 
+
+. 
+. * Education
+. gen education_years = EDUCYR
+(1,538 missing values generated)
+
+. 
+. * Family size
+. gen family_size_cat = .
+(22,431 missing values generated)
+
+. replace family_size_cat = 1 if FAMSZEYR == 1
+(4,434 real changes made)
+
+. replace family_size_cat = 2 if FAMSZEYR == 2
+(6,360 real changes made)
+
+. replace family_size_cat = 3 if FAMSZEYR == 3
+(3,728 real changes made)
+
+. replace family_size_cat = 4 if FAMSZEYR >= 4
+(7,909 real changes made)
+
+. label define fsize_lbl 1 "1-person" 2 "2-person" 3 "3-person" 4 "4+ persons"
+
+. label values family_size_cat fsize_lbl
+
+. 
+. * Region
+. gen region = .
+(22,431 missing values generated)
+
+. replace region = 1 if REGION22 == 1
+(3,443 real changes made)
+
+. replace region = 2 if REGION22 == 2
+(4,498 real changes made)
+
+. replace region = 3 if REGION22 == 3
+(8,602 real changes made)
+
+. replace region = 4 if REGION22 == 4
+(5,693 real changes made)
+
+. label define regionlbl 1 "Northeast" 2 "Midwest" 3 "South" 4 "West"
+
+. label values region regionlbl
+
+. 
+. gen year = 2022
+
+. 
+. **# --> [NEW] ADDITIONAL Covariates
+. ********************************************************
+. * 1. General Health Status (Parent Reported)
+. * Variable: RTHLTH42 (1=Ex, 2=VG, 3=G, 4=Fair, 5=Poor)
+. * We create a binary flag for "Fair/Poor Health" (High Need)
+. gen health_status = .
+(22,431 missing values generated)
+
+. replace health_status = 1 if RTHLTH42 <= 3  // Excellent/VG/Good
+(19,752 real changes made)
+
+. replace health_status = 2 if RTHLTH42 == 4 | RTHLTH42 == 5 // Fair/Poor
+(2,679 real changes made)
+
+. label define hlthlbl 1 "Excellent/VG/Good" 2 "Fair/Poor"
+
+. label values health_status hlthlbl
+
+. 
+. * 2. Mental Health Status (Parent Reported)
+. * Variable: MNHLTH42 (1=Ex, 2=VG, 3=G, 4=Fair, 5=Poor)
+. gen mental_health = .
+(22,431 missing values generated)
+
+. replace mental_health = 1 if MNHLTH42 <= 3 // Excellent/VG/Good
+(20,311 real changes made)
+
+. replace mental_health = 2 if MNHLTH42 == 4 | MNHLTH42 == 5 // Fair/Poor
+(2,120 real changes made)
+
+. label define mhlthlbl 1 "Excellent/VG/Good" 2 "Fair/Poor"
+
+. label values mental_health mhlthlbl
+
+. 
+. * 3. CSHCN: Children with Special Health Care Needs (Composite)
+. * CSHCN implies chronic need. Defined by "Yes" to any of the 5 screeners.
+. * Variables: CHCOUN42, CHEMPB42, CHPMHB42, CHLIMI42, CHSERV42
+. gen cshcn = 0
+
+. foreach v in CHCOUN42 CHEMPB42 CHPMHB42 CHLIMI42 CHSERV42 {
+  2.     * In MEPS: 1=YES, 2=NO. We flag if ANY are 1.
+.     replace cshcn = 1 if `v' == 1
+  3. }
+(326 real changes made)
+(0 real changes made)
+(263 real changes made)
+(51 real changes made)
+(62 real changes made)
+
+. label variable cshcn "Child with Special Health Care Needs (CSHCN)"
+
+. label define yesno 0 "No" 1 "Yes"
+
+. label values cshcn yesno
+
+. 
+. * 4. Language of Interview (Access Barrier)
+. * Variable: INTVLANG (1=English, 2=Spanish, etc.)
+. gen language_barrier = 0
+
+. replace language_barrier = 1 if INTVLANG != 1 & !missing(INTVLANG)
+(2,812 real changes made)
+
+. label variable language_barrier "Interview not in English"
+
+. 
+. tab language_barrier
+
+  Interview |
+     not in |
+    English |      Freq.     Percent        Cum.
+------------+-----------------------------------
+          0 |     19,619       87.46       87.46
+          1 |      2,812       12.54      100.00
+------------+-----------------------------------
+      Total |     22,431      100.00
+
+. tab cshcn
+
+ Child with |
+    Special |
+Health Care |
+      Needs |
+    (CSHCN) |      Freq.     Percent        Cum.
+------------+-----------------------------------
+         No |     21,729       96.87       96.87
+        Yes |        702        3.13      100.00
+------------+-----------------------------------
+      Total |     22,431      100.00
+
+. tab mental_health
+
+    mental_health |      Freq.     Percent        Cum.
+------------------+-----------------------------------
+Excellent/VG/Good |     20,311       90.55       90.55
+        Fair/Poor |      2,120        9.45      100.00
+------------------+-----------------------------------
+            Total |     22,431      100.00
+
+. tab health_status
+
+    health_status |      Freq.     Percent        Cum.
+------------------+-----------------------------------
+Excellent/VG/Good |     19,752       88.06       88.06
+        Fair/Poor |      2,679       11.94      100.00
+------------------+-----------------------------------
+            Total |     22,431      100.00
+
+. 
+. 
+. save "$outdir/person_2022_clean.dta", replace
+
+
+. 
+. count // 22431
+  22,431
+
+. 
+. 
+. 
+. 
+. **# --> STEP 2: Office, Outpatient
+. 
+. * Office-based visits 2022 (h239g.dta)
+. *****************************************************
+. use "$datadir/h239g.dta", clear
+
+. describe DUPERSID EVNTIDX TELEHEALTHFLAG VISITTYPE
+
+Variable      Storage   Display    Value
+    name         type    format    label      Variable label
+--------------------------------------------------------------------------------------------------
+DUPERSID        str10   %10s                  PERSON ID (DUID + PID)
+EVNTIDX         str16   %16s                  EVENT ID
+TELEHEALTHFLAG  byte    %22.0g     H239G0022X
+                                              IS THIS A TELEHEALTH EVENT
+VISITTYPE       byte    %16.0g     H239G0023X
+                                              TYPE OF TELEHEALTH VISIT
+
+. gen year = 2022
+
+. gen tele = TELEHEALTHFLAG == 1
+
+. gen inperson = 1 - tele
+
+. save "$outdir/ob_2022_clean.dta", replace
+
+
+. 
+. * Outpatient visits 2022 (h239f.dta)
+. *******************************************************************************/
+. use "$datadir/h239f.dta", clear
+
+. describe DUPERSID EVNTIDX TELEHEALTHFLAG VISITTYPE
+
+Variable      Storage   Display    Value
+    name         type    format    label      Variable label
+--------------------------------------------------------------------------------------------------
+DUPERSID        str10   %10s                  PERSON ID (DUID + PID)
+EVNTIDX         str16   %16s                  EVENT ID
+TELEHEALTHFLAG  byte    %22.0g     H239F0019X
+                                              IS THIS A TELEHEALTH EVENT
+VISITTYPE       byte    %16.0g     H239F0020X
+                                              TYPE OF TELEHEALTH VISIT
+
+. gen year = 2022
+
+. gen tele = TELEHEALTHFLAG == 1
+
+. gen inperson = 1 - tele
+
+. save "$outdir/op_2022_clean.dta", replace
+
+
+. 
+. * Combine OB and OP (2022)
+. *******************************************************************************/
+. use "$outdir/ob_2022_clean.dta", clear
+
+. append using "$outdir/op_2022_clean.dta"
+
+. save "$outdir/events_2022_all.dta", replace
+
+
+. 
+. 
+. 
+. 
+. *******************************************************************************
+. **# --> STEP 3: Collapse event data → person-year summaries (2022)
+. use "$outdir/events_2022_all.dta", clear
+
+. gen evnum = 1   // numeric placeholder for count
+
+. 
+. collapse ///
+>     (sum) tele tele_visits=tele ///
+>     (sum) inperson inperson_visits=inperson ///
+>     (count) total_visits=evnum ///
+>     (max) any_tele=tele, ///
+>     by(DUPERSID year)
+
+. 
+. gen tele_share = tele_visits / total_visits
+
+. replace tele_share = 0 if total_visits == 0
+(0 real changes made)
+
+. 
+. save "$outdir/event_summary_2022.dta", replace
+
+. 
+. 
+. 
+. 
+. **# --> STEP 4: Merge person-level dataset with event data (2022)
+. *******************************************************************************/
+. 
+. use "$outdir/person_2022_clean.dta", clear
+
+. merge 1:1 DUPERSID using "$outdir/event_summary_2022.dta"
+
+    Result                      Number of obs
+    -----------------------------------------
+    Not matched                         5,486
+        from master                     5,486  (_merge==1)
+        from using                          0  (_merge==2)
+
+    Matched                            16,945  (_merge==3)
+    -----------------------------------------
+
+. 
+. replace tele_visits = 0 if missing(tele_visits)
+(5,486 real changes made)
+
+. replace inperson_visits = 0 if missing(inperson_visits)
+(5,486 real changes made)
+
+. replace total_visits = 0 if missing(total_visits)
+(5,486 real changes made)
+
+. replace any_tele = 0 if missing(any_tele)
+(5,486 real changes made)
+
+. replace tele_share = 0 if missing(tele_share)
+(5,486 real changes made)
+
+. 
+. drop _merge
+
+. 
+. save "$outdir/analytic_2022.dta", replace
+
+
+. 
+. 
+. **# --> Step 5: SAVE ONLY
+. *******************************************************************************/
+. use "$outdir/analytic_2022.dta", clear
+
+. 
+. keep ///
+>     DUPERSID year PERWT22F VARSTR VARPSU ///
+>     age age_cat female race_eth insurance povcat education_years ///
+>     family_size_cat region ///
+>     tele_visits inperson_visits total_visits tele_share any_tele ///
+>         health_status mental_health cshcn language_barrier
+
+. 
+.         
+. save "$outdir/analytic_2022_cleanvars.dta", replace
+
+
+. count // 22,432
+  22,431
+
+. 
+.         
+.         
+.         
+. *******************************
+. **#  2023 MEPS
+. /******************************
+>   FILE REFERENCES (2023)
+>   h251.dta   Full-Year Consolidated (FYC) 2023 person-level file
+>   h249.dta   Medical Conditions file (2023)
+>   h248g.dta  Office-Based Provider Visits
+>   h248f.dta  Outpatient Department Visits
+>   h248e.dta  Emergency Room Visits
+>   h248i.dta  Condition-Event Link File
+> ***********************************************************************/        
+. 
+. **# --> STEP 1: Clean 2023 person-level file (h251.dta)
+. use "$datadir/h251.dta", clear
+
+. count // 18,919
+  18,919
+
+. 
+. * Clean negative values
+. foreach v of varlist AGE23X SEX RACEV2X INSCOV POVCAT EDUCYR MARRY23X REGION23 {
+  2.     replace `v' = . if `v' < 0
+  3. }
+(148 real changes made, 148 to missing)
+(0 real changes made)
+(0 real changes made)
+(0 real changes made)
+(0 real changes made)
+(1,206 real changes made, 1,206 to missing)
+(8 real changes made, 8 to missing)
+(148 real changes made, 148 to missing)
+
+. 
+. * Age
+. gen age = AGE23X
+(148 missing values generated)
+
+. 
+. gen age_cat = .
+(18,919 missing values generated)
+
+. replace age_cat = 1 if AGE23X < 6
+(1,015 real changes made)
+
+. replace age_cat = 2 if AGE23X >= 6 & AGE23X <= 11
+(1,296 real changes made)
+
+. replace age_cat = 3 if AGE23X >= 12 & AGE23X <= 17
+(1,337 real changes made)
+
+. replace age_cat = 4 if AGE23X >= 18
+(15,271 real changes made)
+
+. label define agecatlbl 1 "<6" 2 "6–11" 3 "12–17" 4 "18+"
+
+. label values age_cat agecatlbl
+
+. 
+. * Sex
+. gen female = (SEX == 2)
+
+. label define femlbl 0 "Male" 1 "Female"
+
+. label values female femlbl
+
+. 
+. * Race/Ethnicity
+. capture drop race_eth
+
+. gen race_eth = .
+(18,919 missing values generated)
+
+. replace race_eth = 1 if HISPANX == 1 // * 1. Hispanic (Any Race)
+(4,188 real changes made)
+
+. replace race_eth = 2 if HISPANX == 2 & RACEV2X == 1 // * 2. Non-Hispanic White
+(10,341 real changes made)
+
+. replace race_eth = 3 if HISPANX == 2 & RACEV2X == 2 // * 3. Non-Hispanic Black
+(2,520 real changes made)
+
+. replace race_eth = 4 if HISPANX == 2 & inlist(RACEV2X, 4, 5, 6, 10)
+(1,180 real changes made)
+
+. replace race_eth = 5 if HISPANX == 2 & inlist(RACEV2X, 3, 12)
+(690 real changes made)
+
+. label define race5lbl 1 "Hispanic" 2 "NH White" 3 "NH Black" 4 "NH Asian" 5 "NH Other/Multiple"
+
+. label values race_eth race5lbl
+
+. tab race_eth, missing
+
+         race_eth |      Freq.     Percent        Cum.
+------------------+-----------------------------------
+         Hispanic |      4,188       22.14       22.14
+         NH White |     10,341       54.66       76.80
+         NH Black |      2,520       13.32       90.12
+         NH Asian |      1,180        6.24       96.35
+NH Other/Multiple |        690        3.65      100.00
+------------------+-----------------------------------
+            Total |     18,919      100.00
+
+. 
+. * Insurance
+. gen insurance = INSCOV
+
+. label define inslbl 1 "Private" 2 "Public only" 3 "Uninsured"
+
+. label values insurance inslbl
+
+. 
+. * Poverty
+. capture drop povcat
+
+. gen povcat = .
+(18,919 missing values generated)
+
+. replace povcat = 1 if POVCAT == 1
+(2,872 real changes made)
+
+. replace povcat = 2 if POVCAT == 2 | POVCAT == 3
+(3,380 real changes made)
+
+. replace povcat = 3 if POVCAT == 4
+(5,282 real changes made)
+
+. replace povcat = 4 if POVCAT == 5
+(7,385 real changes made)
+
+. label define povclean_lbl 1 "<100% (Poor)" 2 "100–199% (Low Income)" 3 "200–399% (Middle)" 4 "40
+> 0%+ (High)"
+
+. label values povcat povclean_lbl
+
+. tab POVCAT povcat, missing
+
+FAMILY INC AS % |
+OF POVERTY LINE |                   povcat
+  - CATEGORICAL | <100% (Po  100–199%   200–399%   400%+ (Hi |     Total
+----------------+--------------------------------------------+----------
+1 POOR/NEGATIVE |     2,872          0          0          0 |     2,872 
+    2 NEAR POOR |         0        895          0          0 |       895 
+   3 LOW INCOME |         0      2,485          0          0 |     2,485 
+4 MIDDLE INCOME |         0          0      5,282          0 |     5,282 
+  5 HIGH INCOME |         0          0          0      7,385 |     7,385 
+----------------+--------------------------------------------+----------
+          Total |     2,872      3,380      5,282      7,385 |    18,919 
+
+. 
+. * Education
+. gen education_years = EDUCYR
+(1,206 missing values generated)
+
+. 
+. * Family size
+. gen family_size_cat = .
+(18,919 missing values generated)
+
+. replace family_size_cat = 1 if FAMSZEYR == 1
+(3,355 real changes made)
+
+. replace family_size_cat = 2 if FAMSZEYR == 2
+(5,503 real changes made)
+
+. replace family_size_cat = 3 if FAMSZEYR == 3
+(3,069 real changes made)
+
+. replace family_size_cat = 4 if FAMSZEYR >= 4
+(6,992 real changes made)
+
+. label define fsize_lbl 1 "1-person" 2 "2-person" 3 "3-person" 4 "4+ persons"
+
+. label values family_size_cat fsize_lbl
+
+. 
+. * Region
+. gen region = .
+(18,919 missing values generated)
+
+. replace region = 1 if REGION23 == 1
+(2,894 real changes made)
+
+. replace region = 2 if REGION23 == 2
+(3,838 real changes made)
+
+. replace region = 3 if REGION23 == 3
+(7,377 real changes made)
+
+. replace region = 4 if REGION23 == 4
+(4,662 real changes made)
+
+. label define regionlbl 1 "Northeast" 2 "Midwest" 3 "South" 4 "West"
+
+. label values region regionlbl
+
+. 
+. 
+. gen year = 2023
+
+. 
+. **# --> [NEW] ADDITIONAL Covariates
+. ********************************************************
+. * 1. General Health Status (Parent Reported)
+. * Variable: RTHLTH42 (1=Ex, 2=VG, 3=G, 4=Fair, 5=Poor)
+. * We create a binary flag for "Fair/Poor Health" (High Need)
+. gen health_status = .
+(18,919 missing values generated)
+
+. replace health_status = 1 if RTHLTH42 <= 3  // Excellent/VG/Good
+(16,567 real changes made)
+
+. replace health_status = 2 if RTHLTH42 == 4 | RTHLTH42 == 5 // Fair/Poor
+(2,352 real changes made)
+
+. label define hlthlbl 1 "Excellent/VG/Good" 2 "Fair/Poor"
+
+. label values health_status hlthlbl
+
+. 
+. * 2. Mental Health Status (Parent Reported)
+. * Variable: MNHLTH42 (1=Ex, 2=VG, 3=G, 4=Fair, 5=Poor)
+. gen mental_health = .
+(18,919 missing values generated)
+
+. replace mental_health = 1 if MNHLTH42 <= 3 // Excellent/VG/Good
+(17,048 real changes made)
+
+. replace mental_health = 2 if MNHLTH42 == 4 | MNHLTH42 == 5 // Fair/Poor
+(1,871 real changes made)
+
+. label define mhlthlbl 1 "Excellent/VG/Good" 2 "Fair/Poor"
+
+. label values mental_health mhlthlbl
+
+. 
+. * 3. CSHCN: Children with Special Health Care Needs (Composite)
+. * CSHCN implies chronic need. Defined by "Yes" to any of the 5 screeners.
+. * Variables: CHCOUN42, CHEMPB42, CHPMHB42, CHLIMI42, CHSERV42
+. gen cshcn = 0
+
+. foreach v in CHCOUN42 CHEMPB42 CHPMHB42 CHLIMI42 CHSERV42 {
+  2.     * In MEPS: 1=YES, 2=NO. We flag if ANY are 1.
+.     replace cshcn = 1 if `v' == 1
+  3. }
+(301 real changes made)
+(0 real changes made)
+(251 real changes made)
+(68 real changes made)
+(55 real changes made)
+
+. label variable cshcn "Child with Special Health Care Needs (CSHCN)"
+
+. label define yesno 0 "No" 1 "Yes"
+
+. label values cshcn yesno
+
+. 
+. * 4. Language of Interview (Access Barrier)
+. * Variable: INTVLANG (1=English, 2=Spanish, etc.)
+. gen language_barrier = 0
+
+. replace language_barrier = 1 if INTVLANG != 1 & !missing(INTVLANG)
+(2,076 real changes made)
+
+. label variable language_barrier "Interview not in English"
+
+. 
+. tab language_barrier
+
+  Interview |
+     not in |
+    English |      Freq.     Percent        Cum.
+------------+-----------------------------------
+          0 |     16,843       89.03       89.03
+          1 |      2,076       10.97      100.00
+------------+-----------------------------------
+      Total |     18,919      100.00
+
+. tab cshcn
+
+ Child with |
+    Special |
+Health Care |
+      Needs |
+    (CSHCN) |      Freq.     Percent        Cum.
+------------+-----------------------------------
+         No |     18,244       96.43       96.43
+        Yes |        675        3.57      100.00
+------------+-----------------------------------
+      Total |     18,919      100.00
+
+. tab mental_health
+
+    mental_health |      Freq.     Percent        Cum.
+------------------+-----------------------------------
+Excellent/VG/Good |     17,048       90.11       90.11
+        Fair/Poor |      1,871        9.89      100.00
+------------------+-----------------------------------
+            Total |     18,919      100.00
+
+. tab health_status
+
+    health_status |      Freq.     Percent        Cum.
+------------------+-----------------------------------
+Excellent/VG/Good |     16,567       87.57       87.57
+        Fair/Poor |      2,352       12.43      100.00
+------------------+-----------------------------------
+            Total |     18,919      100.00
+
+. 
+. save "$outdir/person_2023_clean.dta", replace
+
+
+. 
+. 
+. 
+. **# --> STEP 2: Prepare 2023 Event Files (OB + OP)
+. 
+. * Clean 2023 Office-Based Visit File (h248g.dta)
+. use "$datadir/h248g.dta", clear
+
+. keep DUPERSID EVNTIDX TELEHEALTHFLAG VISITTYPE
+
+. gen year = 2023
+
+. gen tele = TELEHEALTHFLAG == 1
+
+. gen inperson = 1 - tele
+
+. save "$outdir/ob_2023_clean.dta", replace
+
+
+. 
+. 
+. * Clean 2023 Outpatient Visit File (h248f.dta)
+. use "$datadir/h248f.dta", clear
+
+. keep DUPERSID EVNTIDX TELEHEALTHFLAG VISITTYPE
+
+. gen year = 2023
+
+. gen tele = TELEHEALTHFLAG == 1
+
+. gen inperson = 1 - tele
+
+. save "$outdir/op_2023_clean.dta", replace
+
+
+. 
+. * Append 2023 OB + OP events
+. use "$outdir/ob_2023_clean.dta", clear
+
+. append using "$outdir/op_2023_clean.dta"
+
+. save "$outdir/events_2023_all.dta", replace
+
+
+. 
+. 
+. 
+. 
+. **# --> STEP 3: Collapse 2023 event-level data to person-year totals
+. use "$outdir/events_2023_all.dta", clear
+
+. gen evnum = 1
+
+. 
+. collapse ///
+>     (sum) tele tele_visits=tele ///
+>     (sum) inperson inperson_visits=inperson ///
+>     (count) total_visits=evnum ///
+>     (max) any_tele=tele, ///
+>     by(DUPERSID year)
+
+. 
+. gen tele_share = tele_visits / total_visits
+
+. replace tele_share = 0 if total_visits == 0
+(0 real changes made)
+
+. 
+. save "$outdir/event_summary_2023.dta", replace
+
+
+. 
+. 
+. 
+. 
+. **# --> STEP 4: Merge 2023 person-level data with visit summaries
+. use "$outdir/person_2023_clean.dta", clear
+
+. merge 1:1 DUPERSID using "$outdir/event_summary_2023.dta"
+
+    Result                      Number of obs
+    -----------------------------------------
+    Not matched                         4,568
+        from master                     4,568  (_merge==1)
+        from using                          0  (_merge==2)
+
+    Matched                            14,351  (_merge==3)
+    -----------------------------------------
+
+. 
+. replace tele_visits = 0 if missing(tele_visits)
+(4,568 real changes made)
+
+. replace inperson_visits = 0 if missing(inperson_visits)
+(4,568 real changes made)
+
+. replace total_visits = 0 if missing(total_visits)
+(4,568 real changes made)
+
+. replace any_tele = 0 if missing(any_tele)
+(4,568 real changes made)
+
+. replace tele_share = 0 if missing(tele_share)
+(4,568 real changes made)
+
+. 
+. drop _merge
+
+. 
+. save "$outdir/analytic_2023.dta", replace
+
+
+. count 
+  18,919
+
+. 
+. 
+. 
+. **# --> STEP 5: SAVE ONLY
+. use "$outdir/analytic_2023.dta", clear
+
+. 
+. 
+. codebook ADHOPE ADPRS ADREST ADWRTH ADNERV // variables do NOT apply to the pediatric sample
+
+--------------------------------------------------------------------------------------------------
+ADHOPE42                                                      SAQ 30 DAYS: HOW OFTEN FELT HOPELESS
+--------------------------------------------------------------------------------------------------
+
+                  Type: Numeric (int)
+                 Label: H2510024X
+
+                 Range: [-15,4]                       Units: 1
+         Unique values: 7                         Missing .: 0/18,919
+
+            Tabulation: Freq.   Numeric  Label
+                          344       -15  -15 CANNOT BE COMPUTED
+                        9,143        -1  -1 INAPPLICABLE
+                        7,172         0  0 NONE OF THE TIME
+                        1,304         1  1 LITTLE OF THE TIME
+                          654         2  2 SOME OF THE TIME
+                          233         3  3 MOST OF THE TIME
+                           69         4  4 ALL OF THE TIME
+
+--------------------------------------------------------------------------------------------------
+ADPRST42                                                     SAQ 4WKS: FELT DOWNHEARTED/DEPR VR-12
+--------------------------------------------------------------------------------------------------
+
+                  Type: Numeric (int)
+                 Label: H2510041X
+
+                 Range: [-15,6]                       Units: 1
+         Unique values: 8                         Missing .: 0/18,919
+
+            Tabulation: Freq.   Numeric  Label
+                          272       -15  -15 CANNOT BE COMPUTED
+                        9,143        -1  -1 INAPPLICABLE
+                          124         1  1 ALL OF THE TIME
+                          304         2  2 MOST OF THE TIME
+                          465         3  3 A GOOD BIT OF THE TIME
+                        1,307         4  4 SOME OF THE TIME
+                        3,019         5  5 LITTLE OF THE TIME
+                        4,285         6  6 NONE OF THE TIME
+
+--------------------------------------------------------------------------------------------------
+ADREST42                                                      SAQ 30 DAYS: HOW OFTEN FELT RESTLESS
+--------------------------------------------------------------------------------------------------
+
+                  Type: Numeric (int)
+                 Label: H2510044X
+
+                 Range: [-15,4]                       Units: 1
+         Unique values: 7                         Missing .: 0/18,919
+
+            Tabulation: Freq.   Numeric  Label
+                          350       -15  -15 CANNOT BE COMPUTED
+                        9,143        -1  -1 INAPPLICABLE
+                        4,936         0  0 NONE OF THE TIME
+                        2,617         1  1 LITTLE OF THE TIME
+                        1,336         2  2 SOME OF THE TIME
+                          411         3  3 MOST OF THE TIME
+                          126         4  4 ALL OF THE TIME
+
+--------------------------------------------------------------------------------------------------
+ADWRTH42                                                     SAQ 30 DAYS: HOW OFTEN FELT WORTHLESS
+--------------------------------------------------------------------------------------------------
+
+                  Type: Numeric (int)
+                 Label: H2510056X
+
+                 Range: [-15,4]                       Units: 1
+         Unique values: 7                         Missing .: 0/18,919
+
+            Tabulation: Freq.   Numeric  Label
+                          346       -15  -15 CANNOT BE COMPUTED
+                        9,143        -1  -1 INAPPLICABLE
+                        7,720         0  0 NONE OF THE TIME
+                          948         1  1 LITTLE OF THE TIME
+                          497         2  2 SOME OF THE TIME
+                          187         3  3 MOST OF THE TIME
+                           78         4  4 ALL OF THE TIME
+
+--------------------------------------------------------------------------------------------------
+ADNERV42                                                       SAQ 30 DAYS: HOW OFTEN FELT NERVOUS
+--------------------------------------------------------------------------------------------------
+
+                  Type: Numeric (int)
+                 Label: H2510035X
+
+                 Range: [-15,4]                       Units: 1
+         Unique values: 7                         Missing .: 0/18,919
+
+            Tabulation: Freq.   Numeric  Label
+                          320       -15  -15 CANNOT BE COMPUTED
+                        9,143        -1  -1 INAPPLICABLE
+                        4,711         0  0 NONE OF THE TIME
+                        2,896         1  1 LITTLE OF THE TIME
+                        1,387         2  2 SOME OF THE TIME
+                          358         3  3 MOST OF THE TIME
+                          104         4  4 ALL OF THE TIME
+
+. codebook CHCOUN CHEMPB CHPMHB CHLIMI CHSERV
+
+--------------------------------------------------------------------------------------------------
+CHCOUN42                                                  CSHCN:CHILD NEEDS COUNSELING (0-17)-R4/2
+--------------------------------------------------------------------------------------------------
+
+                  Type: Numeric (byte)
+                 Label: H2510114X
+
+                 Range: [-8,2]                        Units: 1
+         Unique values: 5                         Missing .: 0/18,919
+
+            Tabulation: Freq.   Numeric  Label
+                           14        -8  -8 DON'T KNOW
+                           67        -7  -7 REFUSED
+                       15,266        -1  -1 INAPPLICABLE
+                          301         1  1 YES
+                        3,271         2  2 NO
+
+--------------------------------------------------------------------------------------------------
+CHEMPB42                                                  CSHCN:COUNS PROB LAST 12+MOS (0-17)-R4/2
+--------------------------------------------------------------------------------------------------
+
+                  Type: Numeric (byte)
+                 Label: H2510117X
+
+                 Range: [-8,2]                        Units: 1
+         Unique values: 4                         Missing .: 0/18,919
+
+            Tabulation: Freq.   Numeric  Label
+                            6        -8  -8 DON'T KNOW
+                       18,618        -1  -1 INAPPLICABLE
+                          285         1  1 YES
+                           10         2  2 NO
+
+--------------------------------------------------------------------------------------------------
+CHPMHB42                                                  CSHCN:PMED FOR HLTH/BEHV COND(0-17)-R4/2
+--------------------------------------------------------------------------------------------------
+
+                  Type: Numeric (byte)
+                 Label: H2510137X
+
+                 Range: [-1,2]                        Units: 1
+         Unique values: 3                         Missing .: 0/18,919
+
+            Tabulation: Freq.   Numeric  Label
+                       18,489        -1  -1 INAPPLICABLE
+                          407         1  1 YES
+                           23         2  2 NO
+
+--------------------------------------------------------------------------------------------------
+CHLIMI42                                                      CSHCN:LIMITED IN ANY WAY (0-17)-R4/2
+--------------------------------------------------------------------------------------------------
+
+                  Type: Numeric (byte)
+                 Label: H2510127X
+
+                 Range: [-8,2]                        Units: 1
+         Unique values: 5                         Missing .: 0/18,919
+
+            Tabulation: Freq.   Numeric  Label
+                           11        -8  -8 DON'T KNOW
+                           67        -7  -7 REFUSED
+                       15,266        -1  -1 INAPPLICABLE
+                          203         1  1 YES
+                        3,372         2  2 NO
+
+--------------------------------------------------------------------------------------------------
+CHSERV42                                                  CSHCN:CHLD NEEDS MED/OTH SERV(0-17)-R4/2
+--------------------------------------------------------------------------------------------------
+
+                  Type: Numeric (byte)
+                 Label: H2510142X
+
+                 Range: [-8,2]                        Units: 1
+         Unique values: 5                         Missing .: 0/18,919
+
+            Tabulation: Freq.   Numeric  Label
+                           28        -8  -8 DON'T KNOW
+                           68        -7  -7 REFUSED
+                       15,266        -1  -1 INAPPLICABLE
+                          342         1  1 YES
+                        3,215         2  2 NO
+
+. 
+. 
+. keep ///
+>     DUPERSID year PERWT23F VARSTR VARPSU ///
+>     age age_cat female race_eth insurance povcat education_years ///
+>     family_size_cat region ///
+>     tele_visits inperson_visits total_visits tele_share any_tele ///
+>         health_status mental_health cshcn language_barrier
+
+.         
+. 
+. save "$outdir/analytic_2023_cleanvars.dta", replace
+
+
+. 
+. 
+. 
+. 
+. 
+. **# Step 3 - Append 2021, 2022, 2023
+. /*******************************************************************************
+>    STEP 7: APPEND 2021 + 2022 + 2023 ANALYTIC DATASETS
+>    RESULT: analytic_2021_2023_pooled.dta
+> *******************************************************************************/
+. 
+. clear
+
+. 
+. * Load 2021
+. use "$outdir/analytic_2021_cleanvars.dta", clear
+
+. count // 28,336
+  28,336
+
+. 
+. * Append 2022
+. append using "$outdir/analytic_2022_cleanvars.dta"
+(label yesno already defined)
+(label mhlthlbl already defined)
+(label hlthlbl already defined)
+(label fsize_lbl already defined)
+(label povclean_lbl already defined)
+(label inslbl already defined)
+(label race5lbl already defined)
+(label femlbl already defined)
+(label agecatlbl already defined)
+
+. count // 50,767
+  50,767
+
+. 
+. * Append 2023
+. append using "$outdir/analytic_2023_cleanvars.dta"
+(label yesno already defined)
+(label mhlthlbl already defined)
+(label hlthlbl already defined)
+(label regionlbl already defined)
+(label fsize_lbl already defined)
+(label povclean_lbl already defined)
+(label inslbl already defined)
+(label race5lbl already defined)
+(label femlbl already defined)
+(label agecatlbl already defined)
+
+. count // 69,686
+  69,686
+
+. 
+. 
+. *-------------------------------------------------------------*
+. * 3. Create unified MEPS survey weight across years
+. *-------------------------------------------------------------*
+. gen weight = .
+(69,686 missing values generated)
+
+. replace weight = PERWT21F if year == 2021
+(28,336 real changes made)
+
+. replace weight = PERWT22F if year == 2022
+(22,431 real changes made)
+
+. replace weight = PERWT23F if year == 2023
+(18,919 real changes made)
+
+. label variable weight "Unified MEPS Person Weight"
+
+. 
+. drop  PERWT21F PERWT22F PERWT23F
+
+. 
+. *-------------------------------------------------------------*
+. * 4. QC Checks
+. *-------------------------------------------------------------*
+. 
+. * Check year distributions
+. tab year
+
+       year |      Freq.     Percent        Cum.
+------------+-----------------------------------
+       2021 |     28,336       40.66       40.66
+       2022 |     22,431       32.19       72.85
+       2023 |     18,919       27.15      100.00
+------------+-----------------------------------
+      Total |     69,686      100.00
+
+. 
+. * Check unified weight
+. summ weight
+
+    Variable |        Obs        Mean    Std. dev.       Min        Max
+-------------+---------------------------------------------------------
+      weight |     69,686    14333.34    11632.41          0   131656.6
+
+. 
+. * Check outcomes
+. summ tele_visits inperson_visits total_visits tele_share any_tele
+
+    Variable |        Obs        Mean    Std. dev.       Min        Max
+-------------+---------------------------------------------------------
+ tele_visits |     69,686    .7280515    4.303569          0        303
+inperson_v~s |     69,686    7.343297    13.96275          0        425
+total_visits |     69,686    8.071349    15.12141          0        425
+  tele_share |     69,686    .0422193    .1507254          0          1
+    any_tele |     69,686    .1284046    .3345421          0          1
+
+. tab any_tele year if age_cat == 2 | 3
+
+           |               year
+(max) tele |      2021       2022       2023 |     Total
+-----------+---------------------------------+----------
+         0 |    24,473     19,646     16,619 |    60,738 
+         1 |     3,863      2,785      2,300 |     8,948 
+-----------+---------------------------------+----------
+     Total |    28,336     22,431     18,919 |    69,686 
+
+. /*           |               year
+> (max) tele |      2021       2022       2023 |     Total
+> -----------+---------------------------------+----------
+>          0 |    24,473     19,646     16,619 |    60,738 
+>          1 |     3,863      2,785      2,300 |     8,948 
+> -----------+---------------------------------+----------
+>      Total |    28,336     22,431     18,919 |    69,686 
+> */
+. 
+. * Check structure
+. describe
+
+
+ Observations:        69,686                  
+    Variables:            23                  7 Dec 2025 15:31
+--------------------------------------------------------------------------------------------------
+Variable      Storage   Display    Value
+    name         type    format    label      Variable label
+--------------------------------------------------------------------------------------------------
+DUPERSID        str10   %10s                  PERSON ID (DUID + PID)
+year            float   %9.0g                 
+age             float   %9.0g                 
+age_cat         float   %9.0g      agecatlbl
+                                              
+female          float   %9.0g      femlbl     
+race_eth        float   %17.0g     race5lbl   
+insurance       float   %11.0g     inslbl     
+povcat          float   %23.0g     povclean_lbl
+                                              
+tele_visits     double  %9.0g                 (sum) tele
+inperson_visits double  %9.0g                 (sum) inperson
+total_visits    long    %9.0g                 (count) evnum
+tele_share      float   %9.0g                 
+any_tele        float   %9.0g                 (max) tele
+VARSTR          int     %8.0g                 VARIANCE ESTIMATION STRATUM, 2021
+VARPSU          byte    %8.0g                 VARIANCE ESTIMATION PSU, 2021
+education_years float   %9.0g                 
+family_size_cat float   %10.0g     fsize_lbl
+                                              
+region          float   %9.0g      reg        
+health_status   float   %17.0g     hlthlbl    
+mental_health   float   %17.0g     mhlthlbl   
+cshcn           float   %9.0g      yesno      Child with Special Health Care Needs (CSHCN)
+language_barr~r float   %9.0g                 Interview not in English
+weight          float   %9.0g                 Unified MEPS Person Weight
+--------------------------------------------------------------------------------------------------
+Sorted by: 
+     Note: Dataset has changed since last saved.
+
+. 
+. *-------------------------------------------------------------*
+. * 5. Sort for clean structure
+. *-------------------------------------------------------------*
+. sort year DUPERSID
+
+. 
+. *-------------------------------------------------------------*
+. * 6. Save pooled dataset
+. *-------------------------------------------------------------*
+. save "$outdir/analytic_pooled_2021_2023.dta", replace
+
+
+. 
+. 
+. 
+. 
+. 
+. 
+. 
+. 
+. **# Step 4 - Statistics
+. *------------------------------------------------------------------*
+. * Statistics + Analytic Sample Construction
+. *------------------------------------------------------------------*
+. use "$outdir/analytic_pooled_2021_2023.dta", clear
+
+. 
+. * Basic descriptive check
+. summ tele_visits inperson_visits total_visits tele_share any_tele
+
+    Variable |        Obs        Mean    Std. dev.       Min        Max
+-------------+---------------------------------------------------------
+ tele_visits |     69,686    .7280515    4.303569          0        303
+inperson_v~s |     69,686    7.343297    13.96275          0        425
+total_visits |     69,686    8.071349    15.12141          0        425
+  tele_share |     69,686    .0422193    .1507254          0          1
+    any_tele |     69,686    .1284046    .3345421          0          1
+
+. /*
+> -------------+---------------------------------------------------------
+>  tele_visits |     69,686    .7280515    4.303569          0        303
+> inperson_v~s |     69,686    7.343297    13.96275          0        425
+> total_visits |     69,686    8.071349    15.12141          0        425
+>   tele_share |     69,686    .0422193    .1507254          0          1
+>     any_tele |     69,686    .1284046    .3345421          0          1
+> */
+. 
+. count
+  69,686
+
+. describe
+
+ Observations:        69,686                  
+    Variables:            23                  7 Dec 2025 15:31
+--------------------------------------------------------------------------------------------------
+Variable      Storage   Display    Value
+    name         type    format    label      Variable label
+--------------------------------------------------------------------------------------------------
+DUPERSID        str10   %10s                  PERSON ID (DUID + PID)
+year            float   %9.0g                 
+age             float   %9.0g                 
+age_cat         float   %9.0g      agecatlbl
+                                              
+female          float   %9.0g      femlbl     
+race_eth        float   %17.0g     race5lbl   
+insurance       float   %11.0g     inslbl     
+povcat          float   %23.0g     povclean_lbl
+                                              
+tele_visits     double  %9.0g                 (sum) tele
+inperson_visits double  %9.0g                 (sum) inperson
+total_visits    long    %9.0g                 (count) evnum
+tele_share      float   %9.0g                 
+any_tele        float   %9.0g                 (max) tele
+VARSTR          int     %8.0g                 VARIANCE ESTIMATION STRATUM, 2021
+VARPSU          byte    %8.0g                 VARIANCE ESTIMATION PSU, 2021
+education_years float   %9.0g                 
+family_size_cat float   %10.0g     fsize_lbl
+                                              
+region          float   %9.0g      reg        
+health_status   float   %17.0g     hlthlbl    
+mental_health   float   %17.0g     mhlthlbl   
+cshcn           float   %9.0g      yesno      Child with Special Health Care Needs (CSHCN)
+language_barr~r float   %9.0g                 Interview not in English
+weight          float   %9.0g                 Unified MEPS Person Weight
+--------------------------------------------------------------------------------------------------
+Sorted by: year  DUPERSID
+
+. tab year, missing
+
+       year |      Freq.     Percent        Cum.
+------------+-----------------------------------
+       2021 |     28,336       40.66       40.66
+       2022 |     22,431       32.19       72.85
+       2023 |     18,919       27.15      100.00
+------------+-----------------------------------
+      Total |     69,686      100.00
+
+. 
+. 
+. 
+. 
+. 
+. **# Exclusion Table
+. *------------------------------------------------------------------*
+. * Exclusion Table Logic  (DO NOT DROP ANY OBSERVATIONS)
+. *------------------------------------------------------------------*
+. 
+. gen exclusion = 0
+
+. 
+. * Exclusion 1: Age outside 6–17
+. replace exclusion = 1 if age < 6 | age > 17
+(59,964 real changes made)
+
+. 
+. * Exclusion 2: Missing or invalid survey weights
+. replace exclusion = 2 if missing(weight) & exclusion==0
+(0 real changes made)
+
+. 
+. * Exclusion 3: Missing key socioeconomic variables
+. local keyvars female race_eth insurance povcat region age
+
+. foreach v of local keyvars {
+  2.     replace exclusion = 3 if missing(`v') & exclusion==0
+  3. }
+(0 real changes made)
+(0 real changes made)
+(0 real changes made)
+(0 real changes made)
+(0 real changes made)
+(0 real changes made)
+
+. 
+. * Exclusion 4 (NOT used for sample removal)
+. * Flag individuals with zero outpatient visits (for sensitivity analyses)
+. gen exclusion_visit = (total_visits == 0)
+
+. 
+. * Exclusion 5: Merge failures (likely none)
+. capture replace exclusion = 5 if _merge_event == 2 & exclusion==0
+
+. 
+. * Label exclusion categories
+. label define exclbl 0 "Included in analytic sample" ///
+>                     1 "Age not 6–17" ///
+>                     2 "Missing survey weight" ///
+>                     3 "Missing key variables" ///
+>                     4 "Zero outpatient visits (sensitivity only)" ///
+>                     5 "Event merge failure"
+
+. 
+. label values exclusion exclbl
+
+. 
+. tab exclusion
+
+                              exclusion |      Freq.     Percent        Cum.
+----------------------------------------+-----------------------------------
+            Included in analytic sample |      9,722       13.95       13.95
+                           Age not 6–17 |     59,964       86.05      100.00
+----------------------------------------+-----------------------------------
+                                  Total |     69,686      100.00
+
+. /*
+>                               exclusion |      Freq.     Percent        Cum.
+> ----------------------------------------+-----------------------------------
+>             Included in analytic sample |      9,722       13.95       13.95
+>                            Age not 6–17 |     59,964       86.05      100.00
+> ----------------------------------------+-----------------------------------
+>                                   Total |     69,686      100.00
+> */
+. 
+. tab exclusion_visit if exclusion==0
+
+exclusion_v |
+       isit |      Freq.     Percent        Cum.
+------------+-----------------------------------
+          0 |      6,729       69.21       69.21
+          1 |      2,993       30.79      100.00
+------------+-----------------------------------
+      Total |      9,722      100.00
+
+. /*exclusion_v |
+>        isit |      Freq.     Percent        Cum.
+> ------------+-----------------------------------
+>           0 |      6,729       69.21       69.21
+>           1 |      2,993       30.79      100.00
+> ------------+-----------------------------------
+>       Total |      9,722      100.00        */
+. 
+. 
+. *------------------------------------------------------------------*
+. * Create Analysis Flags (NO DROPS)
+. *------------------------------------------------------------------*
+. 
+. * Primary analytic sample: children 6–17 with full SES + weight
+. gen keep_child = (exclusion == 0)
+
+. label define keeplbl 0 "Not kept" 1 "Kept: child analytic sample"
+
+. label values keep_child keeplbl
+
+. 
+. * Secondary analytic sample: children with ≥1 outpatient visit
+. gen keep_nonzero = (total_visits > 0)
+
+. label define nzlbl 0 "Zero visits" 1 "Has ≥1 visit"
+
+. label values keep_nonzero nzlbl
+
+. 
+. * Telehealth share cleaned for sensitivity Tobit
+. gen tele_share_nonzero = tele_share if keep_nonzero == 1
+(16,537 missing values generated)
+
+. 
+. *------------------------------------------------------------------*
+. * IMPORTANT: Final QC Checks
+. *------------------------------------------------------------------*
+. 
+. * Check for missing key outcomes in analytic sample
+. foreach v in tele_visits inperson_visits total_visits tele_share any_tele {
+  2.     di "Checking `v'..."
+  3.     count if missing(`v') & keep_child==1
+  4. }
+Checking tele_visits...
+  0
+Checking inperson_visits...
+  0
+Checking total_visits...
+  0
+Checking tele_share...
+  0
+Checking any_tele...
+  0
+
+. 
+. * Check distribution of the analytic sample
+. tab keep_child keep_nonzero
+
+                      |     keep_nonzero
+           keep_child | Zero visi  Has ≥1 vi |     Total
+----------------------+----------------------+----------
+             Not kept |    13,544     46,420 |    59,964 
+Kept: child analytic  |     2,993      6,729 |     9,722 
+----------------------+----------------------+----------
+                Total |    16,537     53,149 |    69,686 
+
+. /*
+> 
+>                       |     keep_nonzero
+>            keep_child | Zero visi  Has ≥1 vi |     Total
+> ----------------------+----------------------+----------
+>              Not kept |    13,544     46,420 |    59,964 
+> Kept: child analytic  |     2,993      6,729 |     9,722 
+> ----------------------+----------------------+----------
+>                 Total |    16,537     53,149 |    69,686 
+> */
+. 
+. 
+. /********************************************************************************************
+> Sample Flow Summary
+> -------------------
+> The pooled 2021–2023 MEPS dataset includes 69,686 individuals. After restricting to 
+> children ages 6–17, 9,722 individuals (14%) met inclusion criteria; no cases were 
+> excluded for missing weights, missing covariates, or merge failures.
+> 
+> Within this analytic cohort, 6,729 children (69%) had at least one outpatient visit, 
+> while 2,993 (31%) had zero visits. Zero-visit cases are retained for models of any 
+> telehealth use and visit counts but are flagged for sensitivity analyses involving 
+> telehealth share.
+> ********************************************************************************************/
+. 
+. 
+. 
+. 
+. **# Descriptive Statistics
+. 
+. 
+. **# Table 1 - Unweighted Descriptive
+. **# --> by Year 
+. /********************************************************************************************
+> Unweighted Descriptive Statistics by Year (Children Ages 6–17)
+> ********************************************************************************************/
+. tab year if keep_child==1
+
+       year |      Freq.     Percent        Cum.
+------------+-----------------------------------
+       2021 |      3,962       40.75       40.75
+       2022 |      3,127       32.16       72.92
+       2023 |      2,633       27.08      100.00
+------------+-----------------------------------
+      Total |      9,722      100.00
+
+. by year, sort: summarize age tele_visits inperson_visits total_visits tele_share if keep_child==
+> 1
+
+--------------------------------------------------------------------------------------------------
+-> year = 2021
+
+    Variable |        Obs        Mean    Std. dev.       Min        Max
+-------------+---------------------------------------------------------
+         age |      3,962    11.56865    3.451464          6         17
+ tele_visits |      3,962    .5610803    3.846319          0         84
+inperson_v~s |      3,962     3.67365    12.76034          0        418
+total_visits |      3,962     4.23473    13.61869          0        418
+  tele_share |      3,962    .0363893    .1564744          0          1
+
+--------------------------------------------------------------------------------------------------
+-> year = 2022
+
+    Variable |        Obs        Mean    Std. dev.       Min        Max
+-------------+---------------------------------------------------------
+         age |      3,127    11.64311    3.431708          6         17
+ tele_visits |      3,127     .435881    3.796355          0        147
+inperson_v~s |      3,127    3.899584    12.23397          0        341
+total_visits |      3,127    4.335465    13.24629          0        341
+  tele_share |      3,127    .0286042    .1368062          0          1
+
+--------------------------------------------------------------------------------------------------
+-> year = 2023
+
+    Variable |        Obs        Mean    Std. dev.       Min        Max
+-------------+---------------------------------------------------------
+         age |      2,633    11.63692    3.425437          6         17
+ tele_visits |      2,633    .3175085    2.565892          0         71
+inperson_v~s |      2,633     4.31523    11.73418          0        235
+total_visits |      2,633    4.632738    12.31023          0        235
+  tele_share |      2,633    .0240578    .1217237          0          1
+
+
+. 
+. * Loop through categorical variables and show year-by-year percentages
+. * ADDED: cshcn health_status mental_health language_barrier
+. foreach v in age_cat female race_eth insurance povcat region cshcn health_status mental_health l
+> anguage_barrier {
+  2.     di " "
+  3.     di "----- `v' (%) by Year -----"
+  4.     tab `v' year if keep_child==1, col nofreq
+  5. }
+ 
+----- age_cat (%) by Year -----
+
+           |               year
+   age_cat |      2021       2022       2023 |     Total
+-----------+---------------------------------+----------
+      6–11 |     49.12      48.48      49.22 |     48.94 
+     12–17 |     50.88      51.52      50.78 |     51.06 
+-----------+---------------------------------+----------
+     Total |    100.00     100.00     100.00 |    100.00 
+ 
+----- female (%) by Year -----
+
+           |               year
+    female |      2021       2022       2023 |     Total
+-----------+---------------------------------+----------
+      Male |     51.97      52.13      51.01 |     51.76 
+    Female |     48.03      47.87      48.99 |     48.24 
+-----------+---------------------------------+----------
+     Total |    100.00     100.00     100.00 |    100.00 
+ 
+----- race_eth (%) by Year -----
+
+                  |               year
+         race_eth |      2021       2022       2023 |     Total
+------------------+---------------------------------+----------
+         Hispanic |     35.44      30.25      29.47 |     32.15 
+         NH White |     38.79      41.61      42.76 |     40.77 
+         NH Black |     14.99      15.93      15.04 |     15.31 
+         NH Asian |      4.47       4.96       6.23 |      5.10 
+NH Other/Multiple |      6.31       7.26       6.49 |      6.67 
+------------------+---------------------------------+----------
+            Total |    100.00     100.00     100.00 |    100.00 
+ 
+----- insurance (%) by Year -----
+
+            |               year
+  insurance |      2021       2022       2023 |     Total
+------------+---------------------------------+----------
+    Private |     48.26      51.77      53.55 |     50.82 
+Public only |     48.44      45.03      43.45 |     45.99 
+  Uninsured |      3.31       3.20       3.00 |      3.19 
+------------+---------------------------------+----------
+      Total |    100.00     100.00     100.00 |    100.00 
+ 
+----- povcat (%) by Year -----
+
+                      |               year
+               povcat |      2021       2022       2023 |     Total
+----------------------+---------------------------------+----------
+         <100% (Poor) |     23.45      21.81      19.33 |     21.81 
+100–199% (Low Income) |     23.09      21.71      22.71 |     22.55 
+    200–399% (Middle) |     27.23      28.85      27.95 |     27.95 
+         400%+ (High) |     26.22      27.63      30.00 |     27.70 
+----------------------+---------------------------------+----------
+                Total |    100.00     100.00     100.00 |    100.00 
+ 
+----- region (%) by Year -----
+
+           |               year
+    region |      2021       2022       2023 |     Total
+-----------+---------------------------------+----------
+ Northeast |     15.02      14.07      13.90 |     14.41 
+   Midwest |     18.20      19.76      19.98 |     19.18 
+     South |     39.63      40.39      42.23 |     40.58 
+      West |     27.16      25.78      23.89 |     25.83 
+-----------+---------------------------------+----------
+     Total |    100.00     100.00     100.00 |    100.00 
+ 
+----- cshcn (%) by Year -----
+
+Child with |
+   Special |
+    Health |
+Care Needs |               year
+   (CSHCN) |      2021       2022       2023 |     Total
+-----------+---------------------------------+----------
+        No |     82.46      81.20      78.88 |     81.08 
+       Yes |     17.54      18.80      21.12 |     18.92 
+-----------+---------------------------------+----------
+     Total |    100.00     100.00     100.00 |    100.00 
+ 
+----- health_status (%) by Year -----
+
+                  |               year
+    health_status |      2021       2022       2023 |     Total
+------------------+---------------------------------+----------
+Excellent/VG/Good |     97.25      97.86      97.49 |     97.51 
+        Fair/Poor |      2.75       2.14       2.51 |      2.49 
+------------------+---------------------------------+----------
+            Total |    100.00     100.00     100.00 |    100.00 
+ 
+----- mental_health (%) by Year -----
+
+                  |               year
+    mental_health |      2021       2022       2023 |     Total
+------------------+---------------------------------+----------
+Excellent/VG/Good |     95.31      95.97      94.76 |     95.37 
+        Fair/Poor |      4.69       4.03       5.24 |      4.63 
+------------------+---------------------------------+----------
+            Total |    100.00     100.00     100.00 |    100.00 
+ 
+----- language_barrier (%) by Year -----
+
+ Interview |
+    not in |               year
+   English |      2021       2022       2023 |     Total
+-----------+---------------------------------+----------
+         0 |     81.68      83.63      86.86 |     83.71 
+         1 |     18.32      16.37      13.14 |     16.29 
+-----------+---------------------------------+----------
+     Total |    100.00     100.00     100.00 |    100.00 
+
+. 
+. 
+. **# --> by Telehealth Use
+. /********************************************************************************************
+> TABLE 2: UNWEIGHTED CHARACTERISTICS OF CHILDREN (6–17) 
+> BY TELEHEALTH USE (any_tele)
+> - any_tele = 0 → No telehealth use
+> - any_tele = 1 → Used telehealth
+> No observations dropped; restrict with keep_child==1
+> ********************************************************************************************/
+. tab any_tele if keep_child==1
+
+ (max) tele |      Freq.     Percent        Cum.
+------------+-----------------------------------
+          0 |      9,084       93.44       93.44
+          1 |        638        6.56      100.00
+------------+-----------------------------------
+      Total |      9,722      100.00
+
+. by any_tele, sort: summarize age tele_visits inperson_visits total_visits tele_share if keep_chi
+> ld==1
+
+--------------------------------------------------------------------------------------------------
+-> any_tele = 0
+
+    Variable |        Obs        Mean    Std. dev.       Min        Max
+-------------+---------------------------------------------------------
+         age |      9,084    11.58157    3.444062          6         17
+ tele_visits |      9,084           0           0          0          0
+inperson_v~s |      9,084    3.481286    11.73994          0        418
+total_visits |      9,084    3.481286    11.73994          0        418
+  tele_share |      9,084           0           0          0          0
+
+--------------------------------------------------------------------------------------------------
+-> any_tele = 1
+
+    Variable |        Obs        Mean    Std. dev.       Min        Max
+-------------+---------------------------------------------------------
+         age |        638    12.03135    3.323333          6         17
+ tele_visits |        638    6.931034    12.04642          1        147
+inperson_v~s |        638    10.16771    17.60151          0        184
+total_visits |        638    17.09875    22.40763          1        187
+  tele_share |        638    .4654608     .320883   .0054054          1
+
+
+. 
+. di "----------------------------------------------------"
+----------------------------------------------------
+
+. di "Categorical Variables by Telehealth Use (Column % = 100%)"
+Categorical Variables by Telehealth Use (Column % = 100%)
+
+. di "----------------------------------------------------"
+----------------------------------------------------
+
+. 
+. foreach v in age_cat female race_eth insurance povcat region year {
+  2.     di " "
+  3.     di "----- `v' (%) by Telehealth Use (any_tele) -----"
+  4.     tab `v' any_tele if keep_child==1, col nofreq
+  5. }
+ 
+----- age_cat (%) by Telehealth Use (any_tele) -----
+
+           |      (max) tele
+   age_cat |         0          1 |     Total
+-----------+----------------------+----------
+      6–11 |     49.24      44.67 |     48.94 
+     12–17 |     50.76      55.33 |     51.06 
+-----------+----------------------+----------
+     Total |    100.00     100.00 |    100.00 
+ 
+----- female (%) by Telehealth Use (any_tele) -----
+
+           |      (max) tele
+    female |         0          1 |     Total
+-----------+----------------------+----------
+      Male |     51.93      49.37 |     51.76 
+    Female |     48.07      50.63 |     48.24 
+-----------+----------------------+----------
+     Total |    100.00     100.00 |    100.00 
+ 
+----- race_eth (%) by Telehealth Use (any_tele) -----
+
+                  |      (max) tele
+         race_eth |         0          1 |     Total
+------------------+----------------------+----------
+         Hispanic |     32.44      28.06 |     32.15 
+         NH White |     39.93      52.82 |     40.77 
+         NH Black |     15.80       8.31 |     15.31 
+         NH Asian |      5.24       3.13 |      5.10 
+NH Other/Multiple |      6.59       7.68 |      6.67 
+------------------+----------------------+----------
+            Total |    100.00     100.00 |    100.00 
+ 
+----- insurance (%) by Telehealth Use (any_tele) -----
+
+            |      (max) tele
+  insurance |         0          1 |     Total
+------------+----------------------+----------
+    Private |     50.09      61.29 |     50.82 
+Public only |     46.54      38.09 |     45.99 
+  Uninsured |      3.37       0.63 |      3.19 
+------------+----------------------+----------
+      Total |    100.00     100.00 |    100.00 
+ 
+----- povcat (%) by Telehealth Use (any_tele) -----
+
+                      |      (max) tele
+               povcat |         0          1 |     Total
+----------------------+----------------------+----------
+         <100% (Poor) |     22.34      14.26 |     21.81 
+100–199% (Low Income) |     22.78      19.28 |     22.55 
+    200–399% (Middle) |     27.92      28.37 |     27.95 
+         400%+ (High) |     26.97      38.09 |     27.70 
+----------------------+----------------------+----------
+                Total |    100.00     100.00 |    100.00 
+ 
+----- region (%) by Telehealth Use (any_tele) -----
+
+           |      (max) tele
+    region |         0          1 |     Total
+-----------+----------------------+----------
+ Northeast |     14.18      17.71 |     14.41 
+   Midwest |     19.40      16.14 |     19.18 
+     South |     41.05      33.86 |     40.58 
+      West |     25.37      32.29 |     25.83 
+-----------+----------------------+----------
+     Total |    100.00     100.00 |    100.00 
+ 
+----- year (%) by Telehealth Use (any_tele) -----
+
+           |      (max) tele
+      year |         0          1 |     Total
+-----------+----------------------+----------
+      2021 |     40.33      46.71 |     40.75 
+      2022 |     32.32      29.94 |     32.16 
+      2023 |     27.34      23.35 |     27.08 
+-----------+----------------------+----------
+     Total |    100.00     100.00 |    100.00 
+
+. 
+. 
+. 
+. 
+. 
+. 
+. 
+. **# Table 2 - Weighted Descriptive Statistics
+. 
+. *------------------------------------------------------------------*
+. * 1. Set Survey Design
+. *------------------------------------------------------------------*
+. svyset VARPSU [pweight=weight], strata(VARSTR) vce(linearized)
+
+Sampling weights: weight
+             VCE: linearized
+     Single unit: missing
+        Strata 1: VARSTR
+ Sampling unit 1: VARPSU
+           FPC 1: <zero>
+
+. 
+. /********************************************************************************************
+> WEIGHTED TABLE: Characteristics of Children Ages 6–17 (MEPS 2021–2023)
+> ********************************************************************************************/
+. 
+. /* Panel A: Weighted Demographics by Year */
+. di "----------------------"
+----------------------
+
+. di "Panel A: Weighted Demographics"
+Panel A: Weighted Demographics
+
+. di "----------------------"
+----------------------
+
+. 
+. * Updated loop to include: cshcn, health_status, mental_health, language_barrier
+. foreach v in age_cat female race_eth insurance povcat region cshcn health_status mental_health l
+> anguage_barrier {
+  2.     di " "
+  3.     di "Weighted distribution of `v' by year"
+  4.     svy: tab `v' year if keep_child==1, col percent format(%5.2f)
+  5. }
+ 
+Weighted distribution of age_cat by year
+(running tabulate on estimation sample)
+
+Number of strata = 105                           Number of obs   =       9,722
+Number of PSUs   = 355                           Population size = 150,174,574
+                                                 Design df       =         250
+
+------------------------------------------
+          |              year             
+  age_cat |   2021    2022    2023   Total
+----------+-------------------------------
+     6–11 |  48.10   48.45   49.15   48.56
+    12–17 |  51.90   51.55   50.85   51.44
+          | 
+    Total | 100.00  100.00  100.00  100.00
+------------------------------------------
+Key: Column percentage
+
+  Pearson:
+    Uncorrected   chi2(2)         =    0.7546
+    Design-based  F(1.99, 497.54) =    0.2778     P = 0.7565
+ 
+Weighted distribution of female by year
+(running tabulate on estimation sample)
+
+Number of strata = 105                           Number of obs   =       9,722
+Number of PSUs   = 355                           Population size = 150,174,574
+                                                 Design df       =         250
+
+------------------------------------------
+          |              year             
+   female |   2021    2022    2023   Total
+----------+-------------------------------
+     Male |  50.71   51.21   51.24   51.05
+   Female |  49.29   48.79   48.76   48.95
+          | 
+    Total | 100.00  100.00  100.00  100.00
+------------------------------------------
+Key: Column percentage
+
+  Pearson:
+    Uncorrected   chi2(2)         =    0.2293
+    Design-based  F(1.81, 452.38) =    0.0870     P = 0.8997
+ 
+Weighted distribution of race_eth by year
+(running tabulate on estimation sample)
+
+Number of strata = 105                           Number of obs   =       9,722
+Number of PSUs   = 355                           Population size = 150,174,574
+                                                 Design df       =         250
+
+------------------------------------------
+          |              year             
+ race_eth |   2021    2022    2023   Total
+----------+-------------------------------
+ Hispanic |  25.94   25.72   26.16   25.94
+ NH White |  46.72   46.03   46.99   46.58
+ NH Black |  14.90   15.26   14.14   14.76
+ NH Asian |   6.07    5.76    6.01    5.95
+ NH Other |   6.38    7.23    6.70    6.77
+          | 
+    Total | 100.00  100.00  100.00  100.00
+------------------------------------------
+Key: Column percentage
+
+  Pearson:
+    Uncorrected   chi2(8)         =    3.9259
+    Design-based  F(6.24, 1560.27)=    0.2212     P = 0.9731
+ 
+Weighted distribution of insurance by year
+(running tabulate on estimation sample)
+
+Number of strata = 105                           Number of obs   =       9,722
+Number of PSUs   = 355                           Population size = 150,174,574
+                                                 Design df       =         250
+
+------------------------------------------
+          |              year             
+insurance |   2021    2022    2023   Total
+----------+-------------------------------
+  Private |  59.60   60.32   60.99   60.30
+ Public o |  37.76   37.30   36.41   37.16
+ Uninsure |   2.63    2.39    2.60    2.54
+          | 
+    Total | 100.00  100.00  100.00  100.00
+------------------------------------------
+Key: Column percentage
+
+  Pearson:
+    Uncorrected   chi2(4)         =    1.8042
+    Design-based  F(3.18, 796.07) =    0.2057     P = 0.9023
+ 
+Weighted distribution of povcat by year
+(running tabulate on estimation sample)
+
+Number of strata = 105                           Number of obs   =       9,722
+Number of PSUs   = 355                           Population size = 150,174,574
+                                                 Design df       =         250
+
+------------------------------------------
+          |              year             
+   povcat |   2021    2022    2023   Total
+----------+-------------------------------
+ <100% (P |  14.78   14.93   13.26   14.33
+  100–199 |  19.01   19.09   20.61   19.57
+  200–399 |  29.27   30.55   29.11   29.64
+ 400%+ (H |  36.94   35.43   37.01   36.46
+          | 
+    Total | 100.00  100.00  100.00  100.00
+------------------------------------------
+Key: Column percentage
+
+  Pearson:
+    Uncorrected   chi2(6)         =    9.3162
+    Design-based  F(5.39, 1347.50)=    0.5715     P = 0.7348
+ 
+Weighted distribution of region by year
+(running tabulate on estimation sample)
+
+Number of strata = 105                           Number of obs   =       9,722
+Number of PSUs   = 355                           Population size = 150,174,574
+                                                 Design df       =         250
+
+------------------------------------------
+          |              year             
+   region |   2021    2022    2023   Total
+----------+-------------------------------
+ Northeas |  17.25   15.41   16.51   16.40
+  Midwest |  20.86   20.51   19.32   20.23
+    South |  38.49   39.91   40.91   39.77
+     West |  23.40   24.17   23.25   23.61
+          | 
+    Total | 100.00  100.00  100.00  100.00
+------------------------------------------
+Key: Column percentage
+
+  Pearson:
+    Uncorrected   chi2(6)         =    8.5684
+    Design-based  F(4.98, 1244.81)=    0.5297     P = 0.7532
+ 
+Weighted distribution of cshcn by year
+(running tabulate on estimation sample)
+
+Number of strata = 105                           Number of obs   =       9,722
+Number of PSUs   = 355                           Population size = 150,174,574
+                                                 Design df       =         250
+
+------------------------------------------
+Child     |
+with      |
+Special   |
+Health    |
+Care      |
+Needs     |              year             
+(CSHCN)   |   2021    2022    2023   Total
+----------+-------------------------------
+       No |  81.95   82.02   78.83   80.93
+      Yes |  18.05   17.98   21.17   19.07
+          | 
+    Total | 100.00  100.00  100.00  100.00
+------------------------------------------
+Key: Column percentage
+
+  Pearson:
+    Uncorrected   chi2(2)         =   13.9471
+    Design-based  F(1.93, 483.33) =    4.3607     P = 0.0142
+ 
+Weighted distribution of health_status by year
+(running tabulate on estimation sample)
+
+Number of strata = 105                           Number of obs   =       9,722
+Number of PSUs   = 355                           Population size = 150,174,574
+                                                 Design df       =         250
+
+------------------------------------------
+health_st |              year             
+atus      |   2021    2022    2023   Total
+----------+-------------------------------
+ Excellen |  97.80   98.28   97.80   97.96
+ Fair/Poo |   2.20    1.72    2.20    2.04
+          | 
+    Total | 100.00  100.00  100.00  100.00
+------------------------------------------
+Key: Column percentage
+
+  Pearson:
+    Uncorrected   chi2(2)         =    2.4405
+    Design-based  F(1.96, 488.96) =    0.7870     P = 0.4532
+ 
+Weighted distribution of mental_health by year
+(running tabulate on estimation sample)
+
+Number of strata = 105                           Number of obs   =       9,722
+Number of PSUs   = 355                           Population size = 150,174,574
+                                                 Design df       =         250
+
+------------------------------------------
+mental_he |              year             
+alth      |   2021    2022    2023   Total
+----------+-------------------------------
+ Excellen |  95.80   96.24   94.77   95.60
+ Fair/Poo |   4.20    3.76    5.23    4.40
+          | 
+    Total | 100.00  100.00  100.00  100.00
+------------------------------------------
+Key: Column percentage
+
+  Pearson:
+    Uncorrected   chi2(2)         =    8.7655
+    Design-based  F(1.96, 490.52) =    2.4877     P = 0.0852
+ 
+Weighted distribution of language_barrier by year
+(running tabulate on estimation sample)
+
+Number of strata = 105                           Number of obs   =       9,722
+Number of PSUs   = 355                           Population size = 150,174,574
+                                                 Design df       =         250
+
+------------------------------------------
+Interview |
+not in    |              year             
+English   |   2021    2022    2023   Total
+----------+-------------------------------
+        0 |  88.00   88.31   89.52   88.61
+        1 |  12.00   11.69   10.48   11.39
+          | 
+    Total | 100.00  100.00  100.00  100.00
+------------------------------------------
+Key: Column percentage
+
+  Pearson:
+    Uncorrected   chi2(2)         =    4.1370
+    Design-based  F(1.82, 455.78) =    1.1346     P = 0.3188
+
+. 
+. 
+. /* Panel B: Weighted Means for Utilization Outcomes by Year */
+. di " "
+ 
+
+. di "----------------------"
+----------------------
+
+. di "Panel B: Weighted Means for Utilization"
+Panel B: Weighted Means for Utilization
+
+. di "----------------------"
+----------------------
+
+. 
+. foreach y in 2021 2022 2023 {
+  2.     di "Year = `y'"
+  3.     svy, subpop(if keep_child==1 & year==`y'): mean ///
+>         any_tele tele_visits inperson_visits tele_share
+  4. }
+Year = 2021
+(running mean on estimation sample)
+
+Survey: Mean estimation
+
+Number of strata = 105             Number of obs   =       69,686
+Number of PSUs   = 390             Population size =  998,832,909
+                                   Subpop. no. obs =        3,836
+                                   Subpop. size    = 50,426,321.7
+                                   Design df       =          285
+
+-----------------------------------------------------------------
+                |             Linearized
+                |       Mean   std. err.     [95% conf. interval]
+----------------+------------------------------------------------
+       any_tele |   .0799319   .0063991      .0673364    .0925274
+    tele_visits |   .5590619    .107302      .3478569     .770267
+inperson_visits |   3.880792   .2224865      3.442867    4.318717
+     tele_share |   .0375148    .003904      .0298305    .0451992
+-----------------------------------------------------------------
+Year = 2022
+(running mean on estimation sample)
+
+Survey: Mean estimation
+
+Number of strata = 105             Number of obs   =       69,686
+Number of PSUs   = 390             Population size =  998,832,909
+                                   Subpop. no. obs =        3,025
+                                   Subpop. size    = 49,696,193.5
+                                   Design df       =          285
+
+-----------------------------------------------------------------
+                |             Linearized
+                |       Mean   std. err.     [95% conf. interval]
+----------------+------------------------------------------------
+       any_tele |   .0606923   .0063784      .0481376    .0732471
+    tele_visits |   .4500944   .1218721      .2102107     .689978
+inperson_visits |   3.968673   .2672934      3.442554    4.494793
+     tele_share |   .0271032   .0029742       .021249    .0329575
+-----------------------------------------------------------------
+Year = 2023
+(running mean on estimation sample)
+
+Survey: Mean estimation
+
+Number of strata = 105             Number of obs   =       69,686
+Number of PSUs   = 390             Population size =  998,832,909
+                                   Subpop. no. obs =        2,561
+                                   Subpop. size    = 50,052,058.5
+                                   Design df       =          285
+
+-----------------------------------------------------------------
+                |             Linearized
+                |       Mean   std. err.     [95% conf. interval]
+----------------+------------------------------------------------
+       any_tele |   .0647248   .0081103      .0487611    .0806886
+    tele_visits |   .3425251   .0725356      .1997515    .4852986
+inperson_visits |   4.498232   .3385655      3.831826    5.164639
+     tele_share |     .02806   .0045328      .0191379    .0369821
+-----------------------------------------------------------------
+
+. 
+. 
+. /* Panel C: Weighted Telehealth Use by SES, Demographics, and Need */
+. di " "
+ 
+
+. di "----------------------"
+----------------------
+
+. di "Panel C: Telehealth Use by SES and Need Factors"
+Panel C: Telehealth Use by SES and Need Factors
+
+. di "----------------------"
+----------------------
+
+. 
+. * Expanded loop to check utilization across ALL key predictors
+. foreach factor in povcat insurance race_eth cshcn health_status mental_health language_barrier {
+  2.     di " "
+  3.     di "Factor = `factor'"
+  4.     svy: mean any_tele tele_visits inperson_visits if keep_child==1, over(`factor')
+  5. }
+ 
+Factor = povcat
+(running mean on estimation sample)
+
+Survey: Mean estimation
+
+Number of strata = 105                       Number of obs   =       9,722
+Number of PSUs   = 355                       Population size = 150,174,574
+                                             Design df       =         250
+
+--------------------------------------------------------------------------
+                         |             Linearized
+                         |       Mean   std. err.     [95% conf. interval]
+-------------------------+------------------------------------------------
+       c.any_tele@povcat |
+           <100% (Poor)  |   .0430523   .0063423      .0305612    .0555434
+  100–199% (Low Income)  |   .0563441   .0079764      .0406346    .0720535
+      200–399% (Middle)  |   .0643757   .0070118       .050566    .0781854
+           400%+ (High)  |   .0883654    .008587      .0714533    .1052775
+                         |
+    c.tele_visits@povcat |
+           <100% (Poor)  |   .2253083   .0489674       .128867    .3217495
+  100–199% (Low Income)  |   .4082231   .1115647      .1884966    .6279496
+      200–399% (Middle)  |   .5163107   .1437699      .2331562    .7994653
+           400%+ (High)  |   .5090758   .0795284      .3524447    .6657069
+                         |
+c.inperson_visits@povcat |
+           <100% (Poor)  |   3.246049   .4670632      2.326169    4.165929
+  100–199% (Low Income)  |   3.640809   .3080775      3.034051    4.247567
+      200–399% (Middle)  |   3.641123   .2652935      3.118628    4.163618
+           400%+ (High)  |   5.097916    .307428      4.492437    5.703395
+--------------------------------------------------------------------------
+ 
+Factor = insurance
+(running mean on estimation sample)
+
+Survey: Mean estimation
+
+Number of strata = 105                          Number of obs   =       9,722
+Number of PSUs   = 355                          Population size = 150,174,574
+                                                Design df       =         250
+
+-----------------------------------------------------------------------------
+                            |             Linearized
+                            |       Mean   std. err.     [95% conf. interval]
+----------------------------+------------------------------------------------
+       c.any_tele@insurance |
+                   Private  |   .0796734   .0062084      .0674459    .0919008
+               Public only  |   .0541035    .006004      .0422786    .0659284
+                 Uninsured  |   .0137103   .0100976     -.0061769    .0335975
+                            |
+    c.tele_visits@insurance |
+                   Private  |   .4998947   .0814265      .3395253     .660264
+               Public only  |   .4010674   .1027222      .1987563    .6033785
+                 Uninsured  |   .0140153   .0101059     -.0058884    .0339189
+                            |
+c.inperson_visits@insurance |
+                   Private  |   4.589221   .2495779      4.097678    5.080765
+               Public only  |    3.48974   .3122021      2.874858    4.104621
+                 Uninsured  |   2.029596   .7235827      .6045009    3.454691
+-----------------------------------------------------------------------------
+ 
+Factor = race_eth
+(running mean on estimation sample)
+
+Survey: Mean estimation
+
+Number of strata = 105                         Number of obs   =       9,722
+Number of PSUs   = 355                         Population size = 150,174,574
+                                               Design df       =         250
+
+----------------------------------------------------------------------------
+                           |             Linearized
+                           |       Mean   std. err.     [95% conf. interval]
+---------------------------+------------------------------------------------
+       c.any_tele@race_eth |
+                 Hispanic  |   .0616728   .0069648      .0479556      .07539
+                 NH White  |   .0843539   .0072022      .0701692    .0985386
+                 NH Black  |   .0314676   .0089405      .0138592     .049076
+                 NH Asian  |   .0404031   .0148258      .0112037    .0696025
+        NH Other/Multiple  |   .0909858   .0185782      .0543961    .1275756
+                           |
+    c.tele_visits@race_eth |
+                 Hispanic  |   .3592708   .0792703      .2031481    .5153936
+                 NH White  |   .6068089   .1016401      .4066289    .8069889
+                 NH Black  |   .1864045   .0901927      .0087702    .3640389
+                 NH Asian  |   .0665947   .0280995      .0112528    .1219366
+        NH Other/Multiple  |   .6428095   .2653199      .1202623    1.165357
+                           |
+c.inperson_visits@race_eth |
+                 Hispanic  |   3.612624   .3887661       2.84695    4.378298
+                 NH White  |   5.197986   .2904656      4.625914    5.770057
+                 NH Black  |   2.078468   .2556975      1.574872    2.582064
+                 NH Asian  |   2.595647   .4767697       1.65665    3.534644
+        NH Other/Multiple  |   4.374496   .5001468      3.389457    5.359534
+----------------------------------------------------------------------------
+ 
+Factor = cshcn
+(running mean on estimation sample)
+
+Survey: Mean estimation
+
+Number of strata = 105                      Number of obs   =       9,722
+Number of PSUs   = 355                      Population size = 150,174,574
+                                            Design df       =         250
+
+-------------------------------------------------------------------------
+                        |             Linearized
+                        |       Mean   std. err.     [95% conf. interval]
+------------------------+------------------------------------------------
+       c.any_tele@cshcn |
+                    No  |   .0406135    .003651      .0334228    .0478042
+                   Yes  |   .1868254   .0153289      .1566351    .2170156
+                        |
+    c.tele_visits@cshcn |
+                    No  |   .1849953   .0428768      .1005496    .2694411
+                   Yes  |   1.578971   .2491117      1.088346    2.069596
+                        |
+c.inperson_visits@cshcn |
+                    No  |   2.389723   .0979466      2.196818    2.582629
+                   Yes  |   11.44008    .696845      10.06764    12.81252
+-------------------------------------------------------------------------
+ 
+Factor = health_status
+(running mean on estimation sample)
+
+Survey: Mean estimation
+
+Number of strata = 105                              Number of obs   =       9,722
+Number of PSUs   = 355                              Population size = 150,174,574
+                                                    Design df       =         250
+
+---------------------------------------------------------------------------------
+                                |             Linearized
+                                |       Mean   std. err.     [95% conf. interval]
+--------------------------------+------------------------------------------------
+       c.any_tele@health_status |
+             Excellent/VG/Good  |   .0658672   .0045941       .056819    .0749153
+                     Fair/Poor  |   .1946128   .0376697      .1204224    .2688033
+                                |
+    c.tele_visits@health_status |
+             Excellent/VG/Good  |   .4351941    .071869      .2936483      .57674
+                     Fair/Poor  |   1.200846   .3526685       .506266    1.895426
+                                |
+c.inperson_visits@health_status |
+             Excellent/VG/Good  |   3.895794   .1838414      3.533719     4.25787
+                     Fair/Poor  |   14.66084   2.167184      10.39257     18.9291
+---------------------------------------------------------------------------------
+ 
+Factor = mental_health
+(running mean on estimation sample)
+
+Survey: Mean estimation
+
+Number of strata = 105                              Number of obs   =       9,722
+Number of PSUs   = 355                              Population size = 150,174,574
+                                                    Design df       =         250
+
+---------------------------------------------------------------------------------
+                                |             Linearized
+                                |       Mean   std. err.     [95% conf. interval]
+--------------------------------+------------------------------------------------
+       c.any_tele@mental_health |
+             Excellent/VG/Good  |   .0609002    .004188       .052652    .0691484
+                     Fair/Poor  |   .2336464   .0292637      .1760116    .2912812
+                                |
+    c.tele_visits@mental_health |
+             Excellent/VG/Good  |   .3800469   .0658967      .2502633    .5098304
+                     Fair/Poor  |    1.98972   .3672189      1.266483    2.712957
+                                |
+c.inperson_visits@mental_health |
+             Excellent/VG/Good  |   3.757182   .1824506      3.397846    4.116518
+                     Fair/Poor  |   11.90912    1.55573      8.845108    14.97312
+---------------------------------------------------------------------------------
+ 
+Factor = language_barrier
+(running mean on estimation sample)
+
+Survey: Mean estimation
+
+Number of strata = 105                                 Number of obs   =       9,722
+Number of PSUs   = 355                                 Population size = 150,174,574
+                                                       Design df       =         250
+
+------------------------------------------------------------------------------------
+                                   |             Linearized
+                                   |       Mean   std. err.     [95% conf. interval]
+-----------------------------------+------------------------------------------------
+       c.any_tele@language_barrier |
+                                0  |   .0718468   .0052059      .0615938    .0820999
+                                1  |   .0424412   .0085467      .0256085    .0592739
+                                   |
+    c.tele_visits@language_barrier |
+                                0  |   .4781427   .0794465      .3216731    .6346124
+                                1  |   .2384231   .1152383      .0114615    .4653847
+                                   |
+c.inperson_visits@language_barrier |
+                                0  |   4.264188   .1987185      3.872812    4.655563
+                                1  |   2.960509   .5211631      1.934079    3.986939
+------------------------------------------------------------------------------------
+
+. 
+. 
+. 
+. 
+. 
+. 
+. 
+. **# Inferential Statistics
+. 
+. *------------------------------------------------------------------*
+. * 1. Define Global Covariates List
+. *------------------------------------------------------------------*
+. /* Predictors:
+>    - SES:          i.povcat i.insurance
+>    - Demographics: age i.female i.race_eth i.region
+>    - Time:         i.year
+>    - Need/Health:  i.cshcn i.health_status i.mental_health
+>    - Access:       i.language_barrier
+> */
+. 
+. global covariates "i.povcat i.insurance age i.female i.race_eth i.region i.year i.cshcn i.health
+> _status i.mental_health i.language_barrier"
+
+. 
+. * Verify the list
+. display "$covariates"
+i.povcat i.insurance age i.female i.race_eth i.region i.year i.cshcn i.health_status i.mental_heal
+> th i.language_barrier
+
+. 
+. 
+. **# --> Model 1
+. /********************************************************************************************
+> MODEL 1: Logistic Regression
+> Outcome: any_tele (0/1)
+> Purpose: Estimate barriers to accessing *any* telehealth.
+> ********************************************************************************************/
+. svy: logit any_tele $covariates if keep_child==1
+(running logit on estimation sample)
+
+Survey: Logistic regression
+
+Number of strata = 105                           Number of obs   =       9,722
+Number of PSUs   = 355                           Population size = 150,174,574
+                                                 Design df       =         250
+                                                 F(20, 231)      =       13.36
+                                                 Prob > F        =      0.0000
+
+----------------------------------------------------------------------------------------
+                       |             Linearized
+              any_tele | Coefficient  std. err.      t    P>|t|     [95% conf. interval]
+-----------------------+----------------------------------------------------------------
+                povcat |
+100–199% (Low Income)  |   .4293806   .2222458     1.93   0.054    -.0083321    .8670933
+    200–399% (Middle)  |   .5126431   .2255769     2.27   0.024     .0683697    .9569164
+         400%+ (High)  |   .7170833   .2408427     2.98   0.003      .242744    1.191423
+                       |
+             insurance |
+          Public only  |  -.1292838   .1514202    -0.85   0.394    -.4275057    .1689381
+            Uninsured  |   -1.35753   .7650935    -1.77   0.077     -2.86438    .1493207
+                       |
+                   age |   .0190735   .0177002     1.08   0.282    -.0157871    .0539341
+                       |
+                female |
+               Female  |   .1910381   .1102081     1.73   0.084    -.0260166    .4080928
+                       |
+              race_eth |
+             NH White  |  -.0517842   .1571898    -0.33   0.742    -.3613694    .2578009
+             NH Black  |  -.7039983   .2809596    -2.51   0.013    -1.257348   -.1506488
+             NH Asian  |  -.5082432   .3874239    -1.31   0.191    -1.271274    .2547876
+    NH Other/Multiple  |   .0642851   .2601372     0.25   0.805    -.4480546    .5766249
+                       |
+                region |
+              Midwest  |  -.0352075   .2408864    -0.15   0.884    -.5096328    .4392178
+                South  |   .0552837   .1984467     0.28   0.781    -.3355567    .4461241
+                 West  |   .3490414   .2071114     1.69   0.093    -.0588642     .756947
+                       |
+                  year |
+                 2022  |  -.3216665   .1176052    -2.74   0.007    -.5532897   -.0900432
+                 2023  |  -.3606062   .1609764    -2.24   0.026     -.677649   -.0435635
+                       |
+                 cshcn |
+                  Yes  |   1.525852   .1377213    11.08   0.000      1.25461    1.797094
+                       |
+         health_status |
+            Fair/Poor  |   .3262994    .262364     1.24   0.215    -.1904262     .843025
+                       |
+         mental_health |
+            Fair/Poor  |   .8390584   .1792835     4.68   0.000     .4859599    1.192157
+    1.language_barrier |  -.3051724   .2279019    -1.34   0.182    -.7540248    .1436799
+                 _cons |   -3.70905   .3667887   -10.11   0.000     -4.43144    -2.98666
+----------------------------------------------------------------------------------------
+
+. 
+. * Margins: Prob. of use by Poverty & Insurance, averaged over other covariates
+. margins i.povcat i.insurance, at(year=(2021 2022 2023)) post
+
+Predictive margins
+
+Number of strata = 105                           Number of obs   =       9,722
+Number of PSUs   = 355                           Population size = 150,174,574
+                                                 Subpop. no. obs =       9,422
+                                                 Subpop. size    =           .
+Model VCE: Linearized                            Design df       =         250
+
+Expression: Pr(any_tele), predict()
+1._at: year = 2021
+2._at: year = 2022
+3._at: year = 2023
+
+------------------------------------------------------------------------------------------
+                         |            Delta-method
+                         |     Margin   std. err.      t    P>|t|     [95% conf. interval]
+-------------------------+----------------------------------------------------------------
+              _at#povcat |
+         1#<100% (Poor)  |   .0523954   .0092038     5.69   0.000     .0342686    .0705222
+1#100–199% (Low Income)  |   .0761398   .0106007     7.18   0.000     .0552618    .0970178
+    1#200–399% (Middle)  |    .081697    .009934     8.22   0.000     .0621321    .1012619
+         1#400%+ (High)  |   .0968244   .0097921     9.89   0.000      .077539    .1161099
+         2#<100% (Poor)  |   .0392036   .0069889     5.61   0.000      .025439    .0529682
+2#100–199% (Low Income)  |   .0576348   .0090559     6.36   0.000     .0397992    .0754704
+    2#200–399% (Middle)  |   .0619988   .0084446     7.34   0.000     .0453672    .0786303
+         2#400%+ (High)  |   .0739682   .0087516     8.45   0.000     .0567319    .0912045
+         3#<100% (Poor)  |   .0378318   .0082867     4.57   0.000     .0215112    .0541525
+3#100–199% (Low Income)  |   .0556891   .0082665     6.74   0.000     .0394082      .07197
+    3#200–399% (Middle)  |   .0599227   .0081749     7.33   0.000     .0438224    .0760231
+         3#400%+ (High)  |   .0715445   .0108806     6.58   0.000     .0501153    .0929737
+                         |
+           _at#insurance |
+              1#Private  |   .0864717     .00688    12.57   0.000     .0729215     .100022
+          1#Public only  |   .0775676   .0098934     7.84   0.000     .0580825    .0970527
+            1#Uninsured  |   .0257299   .0187958     1.37   0.172    -.0112885    .0627483
+              2#Private  |   .0657831   .0068489     9.60   0.000     .0522943    .0792719
+          2#Public only  |   .0587729   .0077782     7.56   0.000     .0434537     .074092
+            2#Uninsured  |   .0189732   .0139665     1.36   0.176    -.0085338    .0464802
+              3#Private  |    .063598   .0083565     7.61   0.000       .04714     .080056
+          3#Public only  |   .0567952   .0083272     6.82   0.000     .0403947    .0731957
+            3#Uninsured  |   .0182807   .0132533     1.38   0.169    -.0078217    .0443831
+------------------------------------------------------------------------------------------
+
+. 
+. * Plot
+. marginsplot, ///
+>     title("Predicted Probability of Any Telehealth Use") ///
+>     ytitle("Pr(Any Telehealth)") ///
+>     xtitle("SES Groups") ///
+>     name(model1_logit_plot, replace)
+
+Variables that uniquely identify margins: year povcat insurance
+
+.         
+.         
+.         
+. 
+. 
+. **# --> Model 2
+. /********************************************************************************************
+> MODEL 2: Telehealth Visit Counts (Negative Binomial Regression)
+> Outcome: tele_visits
+> Goal: Estimate SES/Insurance differences in the *intensity* of telehealth use.
+> ********************************************************************************************/
+. 
+. * Ensure survey design is set
+. svyset VARPSU [pweight = weight], strata(VARSTR) vce(linearized)
+
+Sampling weights: weight
+             VCE: linearized
+     Single unit: missing
+        Strata 1: VARSTR
+ Sampling unit 1: VARPSU
+           FPC 1: <zero>
+
+. 
+. *---------------------------------------------------------------*
+. * MODEL 2: Survey-weighted NBREG with IRRs
+. *---------------------------------------------------------------*
+. svy: nbreg tele_visits $covariates if keep_child==1, irr
+(running nbreg on estimation sample)
+
+Survey: Negative binomial regression
+
+Number of strata = 105                           Number of obs   =       9,722
+Number of PSUs   = 355                           Population size = 150,174,574
+                                                 Design df       =         250
+                                                 F(20, 231)      =       21.88
+Dispersion: mean                                 Prob > F        =      0.0000
+
+----------------------------------------------------------------------------------------
+                       |             Linearized
+           tele_visits |        IRR   std. err.      t    P>|t|     [95% conf. interval]
+-----------------------+----------------------------------------------------------------
+                povcat |
+100–199% (Low Income)  |   2.720363   .9583748     2.84   0.005     1.359229    5.444539
+    200–399% (Middle)  |   2.344395    .926112     2.16   0.032     1.076819    5.104094
+         400%+ (High)  |   2.839129   1.225608     2.42   0.016     1.213241    6.643902
+                       |
+             insurance |
+          Public only  |   1.058948   .2978109     0.20   0.839     .6085896    1.842574
+            Uninsured  |   .0571769   .0400027    -4.09   0.000     .0144144    .2268003
+                       |
+                   age |    1.06725   .0399019     1.74   0.083      .991487    1.148802
+                       |
+                female |
+               Female  |   1.271633   .2527206     1.21   0.228     .8597529    1.880832
+                       |
+              race_eth |
+             NH White  |   .8103029   .2125023    -0.80   0.423     .4834299    1.358192
+             NH Black  |   .4110345   .1429531    -2.56   0.011     .2072049    .8153735
+             NH Asian  |   .1892578   .0905307    -3.48   0.001     .0737741    .4855159
+    NH Other/Multiple  |   1.078864   .3395749     0.24   0.810     .5804248    2.005338
+                       |
+                region |
+              Midwest  |   .6386737   .2199688    -1.30   0.194     .3241054    1.258554
+                South  |   1.339183   .4513567     0.87   0.387     .6895351    2.600899
+                 West  |    1.24287   .3634505     0.74   0.458     .6987137    2.210813
+                       |
+                  year |
+                 2022  |   .4339484   .0802822    -4.51   0.000     .3014368    .6247121
+                 2023  |   .3391061   .0988104    -3.71   0.000       .19103    .6019626
+                       |
+                 cshcn |
+                  Yes  |   9.566898   2.415376     8.94   0.000     5.818633    15.72973
+                       |
+         health_status |
+            Fair/Poor  |   .6607799   .2269163    -1.21   0.229     .3359901    1.299533
+                       |
+         mental_health |
+            Fair/Poor  |    2.44731   .6485084     3.38   0.001     1.452223    4.124247
+    1.language_barrier |   .3195123    .119407    -3.05   0.003     .1530496    .6670266
+                 _cons |   .0635175   .0416062    -4.21   0.000     .0174829    .2307668
+-----------------------+----------------------------------------------------------------
+              /lnalpha |   3.302345   .0843675                      3.136184    3.468507
+-----------------------+----------------------------------------------------------------
+                 alpha |    27.1763   2.292796                      23.01586     32.0888
+----------------------------------------------------------------------------------------
+Note: Estimates are transformed only in the first equation to incidence-rate ratios.
+Note: _cons estimates baseline incidence rate.
+
+. 
+. *---------------------------------------------------------------*
+. * Marginal predictions: expected telehealth visits
+. *---------------------------------------------------------------*
+. margins i.povcat i.insurance, ///
+>     at(year=(2021 2022 2023)) ///
+>     post
+
+Predictive margins
+
+Number of strata = 105                           Number of obs   =       9,722
+Number of PSUs   = 355                           Population size = 150,174,574
+                                                 Subpop. no. obs =       9,422
+                                                 Subpop. size    =           .
+Model VCE: Linearized                            Design df       =         250
+
+Expression: Predicted number of events, predict()
+1._at: year = 2021
+2._at: year = 2022
+3._at: year = 2023
+
+------------------------------------------------------------------------------------------
+                         |            Delta-method
+                         |     Margin   std. err.      t    P>|t|     [95% conf. interval]
+-------------------------+----------------------------------------------------------------
+              _at#povcat |
+         1#<100% (Poor)  |   .3997895   .1443598     2.77   0.006     .1154731     .684106
+1#100–199% (Low Income)  |   1.087573   .3494935     3.11   0.002     .3992459      1.7759
+    1#200–399% (Middle)  |   .9372644   .3011012     3.11   0.002      .344246    1.530283
+         1#400%+ (High)  |   1.135054   .3022164     3.76   0.000     .5398393    1.730269
+         2#<100% (Poor)  |    .173488   .0619676     2.80   0.006     .0514429    .2955332
+2#100–199% (Low Income)  |   .4719504   .1478086     3.19   0.002     .1808417    .7630592
+    2#200–399% (Middle)  |   .4067244   .1336175     3.04   0.003     .1435649    .6698839
+         2#400%+ (High)  |   .4925549   .1261356     3.90   0.000     .2441311    .7409787
+         3#<100% (Poor)  |   .1355711   .0457536     2.96   0.003     .0454595    .2256827
+3#100–199% (Low Income)  |   .3688025   .1011202     3.65   0.000     .1696464    .5679587
+    3#200–399% (Middle)  |   .3178321   .0903206     3.52   0.001     .1399458    .4957184
+         3#400%+ (High)  |   .3849037   .1188824     3.24   0.001      .150765    .6190424
+                         |
+           _at#insurance |
+              1#Private  |   .9521243   .2184354     4.36   0.000     .5219161    1.382332
+          1#Public only  |    1.00825   .3347881     3.01   0.003     .3488859    1.667615
+            1#Uninsured  |   .0544395   .0384468     1.42   0.158    -.0212814    .1301605
+              2#Private  |   .4131728   .0984431     4.20   0.000     .2192892    .6070564
+          2#Public only  |   .4375286   .1382861     3.16   0.002     .1651745    .7098828
+            2#Uninsured  |   .0236239   .0162971     1.45   0.148    -.0084732    .0557211
+              3#Private  |   .3228711   .0762655     4.23   0.000     .1726665    .4730758
+          3#Public only  |   .3419039   .1109091     3.08   0.002     .1234685    .5603392
+            3#Uninsured  |   .0184608   .0126349     1.46   0.145    -.0064237    .0433453
+------------------------------------------------------------------------------------------
+
+. 
+. *---------------------------------------------------------------*
+. * Plot predicted visit counts
+. *---------------------------------------------------------------*
+. marginsplot, ///
+>     title("Predicted Telehealth Visit Counts by SES and Year") ///
+>     ytitle("Expected Telehealth Visits") ///
+>     xtitle("SES / Insurance Groups") ///
+>     name(model2_nbreg_plot, replace)
+
+Variables that uniquely identify margins: year povcat insurance
+
+. 
+. 
+. **# --> Model 3
+. /********************************************************************************************
+> MODEL 3: In-Person Visit Counts (Negative Binomial Regression)
+> Outcome: inperson_visits
+> Goal: Assess whether SES/Insurance groups supplement or substitute care.
+>       (High Tele + High In-Person = Supplementation)
+>       (High Tele + Low In-Person  = Substitution)
+> ********************************************************************************************/
+. 
+. svy: nbreg inperson_visits $covariates if keep_child==1, irr
+(running nbreg on estimation sample)
+
+Survey: Negative binomial regression
+
+Number of strata = 105                           Number of obs   =       9,722
+Number of PSUs   = 355                           Population size = 150,174,574
+                                                 Design df       =         250
+                                                 F(20, 231)      =       40.64
+Dispersion: mean                                 Prob > F        =      0.0000
+
+----------------------------------------------------------------------------------------
+                       |             Linearized
+       inperson_visits |        IRR   std. err.      t    P>|t|     [95% conf. interval]
+-----------------------+----------------------------------------------------------------
+                povcat |
+100–199% (Low Income)  |   1.251949   .1357052     2.07   0.039      1.01128    1.549893
+    200–399% (Middle)  |   1.239023   .1329292     2.00   0.047     1.003029    1.530542
+         400%+ (High)  |   1.596936   .1831801     4.08   0.000     1.274012    2.001712
+                       |
+             insurance |
+          Public only  |   .9345714   .0752313    -0.84   0.401      .797552    1.095131
+            Uninsured  |   .6754551   .2171394    -1.22   0.223      .358615    1.272227
+                       |
+                   age |    .975879   .0079683    -2.99   0.003      .960311    .9916994
+                       |
+                female |
+               Female  |   1.018068   .0535847     0.34   0.734     .9178183    1.129267
+                       |
+              race_eth |
+             NH White  |   1.309659   .1107285     3.19   0.002     1.108769    1.546947
+             NH Black  |   .6761774   .0811448    -3.26   0.001      .533845    .8564582
+             NH Asian  |   .7443591   .0873099    -2.52   0.012     .5908195    .9377999
+    NH Other/Multiple  |   1.104121   .1259401     0.87   0.386     .8819686    1.382229
+                       |
+                region |
+              Midwest  |   .7693516   .0912154    -2.21   0.028      .609136    .9717071
+                South  |   .8576681   .1119274    -1.18   0.241     .6632777     1.10903
+                 West  |   .8912698   .1174377    -0.87   0.383     .6875519    1.155348
+                       |
+                  year |
+                 2022  |   .9974972   .0580791    -0.04   0.966     .8894255      1.1187
+                 2023  |   1.052684    .080803     0.67   0.504     .9049879    1.224484
+                       |
+                 cshcn |
+                  Yes  |   4.130697   .2782604    21.06   0.000     3.617462    4.716747
+                       |
+         health_status |
+            Fair/Poor  |   2.346975   .4977844     4.02   0.000     1.545588    3.563882
+                       |
+         mental_health |
+            Fair/Poor  |   1.354756   .1776481     2.32   0.021     1.046407    1.753967
+    1.language_barrier |   .9028114   .1129978    -0.82   0.415     .7055708     1.15519
+                 _cons |   2.489395   .5982481     3.80   0.000     1.550741    3.996213
+-----------------------+----------------------------------------------------------------
+              /lnalpha |    .425053   .0454429                      .3355532    .5145528
+-----------------------+----------------------------------------------------------------
+                 alpha |   1.529671   .0695128                      1.398714     1.67289
+----------------------------------------------------------------------------------------
+Note: Estimates are transformed only in the first equation to incidence-rate ratios.
+Note: _cons estimates baseline incidence rate.
+
+. 
+. *---------------------------------------------------------------*
+. * Marginal predictions: expected in-person visits
+. *---------------------------------------------------------------*
+. margins i.povcat i.insurance, ///
+>     at(year=(2021 2022 2023)) ///
+>     post
+
+Predictive margins
+
+Number of strata = 105                           Number of obs   =       9,722
+Number of PSUs   = 355                           Population size = 150,174,574
+                                                 Subpop. no. obs =       9,422
+                                                 Subpop. size    =           .
+Model VCE: Linearized                            Design df       =         250
+
+Expression: Predicted number of events, predict()
+1._at: year = 2021
+2._at: year = 2022
+3._at: year = 2023
+
+------------------------------------------------------------------------------------------
+                         |            Delta-method
+                         |     Margin   std. err.      t    P>|t|     [95% conf. interval]
+-------------------------+----------------------------------------------------------------
+              _at#povcat |
+         1#<100% (Poor)  |   3.037391   .3305314     9.19   0.000      2.38641    3.688372
+1#100–199% (Low Income)  |   3.802658   .2881857    13.20   0.000     3.235077    4.370239
+    1#200–399% (Middle)  |   3.763397   .2527665    14.89   0.000     3.265574     4.26122
+         1#400%+ (High)  |   4.850519   .2754264    17.61   0.000     4.308067    5.392971
+         2#<100% (Poor)  |   3.029789    .317881     9.53   0.000     2.403723    3.655855
+2#100–199% (Low Income)  |   3.793141   .3203011    11.84   0.000     3.162308    4.423973
+    2#200–399% (Middle)  |   3.753978   .2305265    16.28   0.000     3.299957       4.208
+         2#400%+ (High)  |   4.838379   .3441795    14.06   0.000     4.160518     5.51624
+         3#<100% (Poor)  |   3.197412   .3664781     8.72   0.000     2.475634    3.919191
+3#100–199% (Low Income)  |   4.002997   .3630751    11.03   0.000     3.287921    4.718073
+    3#200–399% (Middle)  |   3.961668   .2798473    14.16   0.000     3.410509    4.512827
+         3#400%+ (High)  |   5.106063   .4160733    12.27   0.000     4.286608    5.925519
+                         |
+           _at#insurance |
+              1#Private  |   4.207997   .2104958    19.99   0.000     3.793426    4.622568
+          1#Public only  |   3.932674   .3051913    12.89   0.000       3.3316    4.533748
+            1#Uninsured  |   2.842313   .8908101     3.19   0.002     1.087864    4.596762
+              2#Private  |   4.197465   .2597131    16.16   0.000     3.685961     4.70897
+          2#Public only  |   3.922831   .2984228    13.15   0.000     3.335088    4.510574
+            2#Uninsured  |   2.835199   .8976078     3.16   0.002     1.067362    4.603036
+              3#Private  |   4.429691   .3238303    13.68   0.000     3.791908    5.067474
+          3#Public only  |   4.139863    .343795    12.04   0.000     3.462759    4.816966
+            3#Uninsured  |   2.992057   .9906637     3.02   0.003     1.040947    4.943168
+------------------------------------------------------------------------------------------
+
+. 
+. *---------------------------------------------------------------*
+. * Plot predicted visit counts
+. *---------------------------------------------------------------*
+. marginsplot, ///
+>     title("Predicted In-Person Visit Counts by SES and Year") ///
+>     ytitle("Expected In-Person Visits") ///
+>     xtitle("SES / Insurance Groups") ///
+>     name(model3_nbreg_inperson, replace)
+
+Variables that uniquely identify margins: year povcat insurance
+
+. 
+. 
+. **# --> Model 4
+. /********************************************************************************************
+>     MODEL 4: Survey-Weighted Tobit Regression
+>     Outcome: tele_share (bounded 0–1)
+>     Purpose: Test whether SES predicts the *proportion* of care delivered via telehealth.
+>     
+>     Notes:
+>     - tele_share includes zeros (common) and ones (rare).
+>     - Tobit handles the censoring at 0 and 1 correctly.
+> ********************************************************************************************/
+. 
+. *---------------------------------------------------------------*
+. * 2.   Tobit Model (censored at 0 and 1)
+. *---------------------------------------------------------------*
+. svy: tobit tele_share $covariates if keep_child==1, ll(0) ul(1)
+(running tobit on estimation sample)
+
+Survey: Tobit regression
+
+Number of strata = 105                         Number of obs     =       9,722
+Number of PSUs   = 355                         Population size   = 150,174,574
+                                               Design df         =         250
+
+                                               Censoring of obs:           
+                                                      Uncensored =         552
+Limits: Lower = 0                                  Left-censored =       8,793
+        Upper = 1                                 Right-censored =          77
+
+                                               F(20, 231)        =       16.11
+                                               Prob > F          =      0.0000
+
+----------------------------------------------------------------------------------------
+                       |             Linearized
+            tele_share | Coefficient  std. err.      t    P>|t|     [95% conf. interval]
+-----------------------+----------------------------------------------------------------
+                povcat |
+100–199% (Low Income)  |   .1473376   .1083079     1.36   0.175    -.0659746    .3606499
+    200–399% (Middle)  |   .1898894   .1120125     1.70   0.091     -.030719    .4104979
+         400%+ (High)  |   .2750213   .1197057     2.30   0.022     .0392612    .5107814
+                       |
+             insurance |
+          Public only  |   -.061255   .0750619    -0.82   0.415    -.2090893    .0865794
+            Uninsured  |  -.6371768   .2928118    -2.18   0.030    -1.213869   -.0604844
+                       |
+                   age |    .011647   .0086418     1.35   0.179    -.0053731     .028667
+                       |
+                female |
+               Female  |   .0693246    .054536     1.27   0.205    -.0380841    .1767332
+                       |
+              race_eth |
+             NH White  |   -.046855    .078141    -0.60   0.549    -.2007536    .1070435
+             NH Black  |  -.3061037   .1262655    -2.42   0.016    -.5547834    -.057424
+             NH Asian  |  -.2387676   .1905231    -1.25   0.211    -.6140025    .1364673
+    NH Other/Multiple  |   .0446393   .1243919     0.36   0.720    -.2003503    .2896289
+                       |
+                region |
+              Midwest  |  -.0149361    .112966    -0.13   0.895    -.2374225    .2075503
+                South  |    .031791   .0953415     0.33   0.739    -.1559839     .219566
+                 West  |   .1964697   .1057378     1.86   0.064    -.0117806    .4047201
+                       |
+                  year |
+                 2022  |  -.1666745   .0557899    -2.99   0.003    -.2765525   -.0567965
+                 2023  |  -.1903102   .0809441    -2.35   0.019    -.3497295   -.0308909
+                       |
+                 cshcn |
+                  Yes  |   .7222837   .0721941    10.00   0.000     .5800975      .86447
+                       |
+         health_status |
+            Fair/Poor  |   .0557326   .1273384     0.44   0.662    -.1950601    .3065254
+                       |
+         mental_health |
+            Fair/Poor  |   .4097048   .0863929     4.74   0.000     .2395542    .5798554
+    1.language_barrier |  -.1532852   .1054302    -1.45   0.147    -.3609298    .0543593
+                 _cons |    -1.9653    .206197    -9.53   0.000    -2.371404   -1.559195
+-----------------------+----------------------------------------------------------------
+      var(e.tele_share)|   1.041663   .1054794                      .8533257    1.271568
+----------------------------------------------------------------------------------------
+
+. 
+. 
+. *---------------------------------------------------------------*
+. * 3.   Marginal Effects: Expected Telehealth Share (bounded 0–1)
+. * Note: predict(ystar(0,1)) calculates E(y|x) accounting for censoring
+. *---------------------------------------------------------------*
+. margins i.povcat i.insurance, at(year=(2021 2022 2023)) predict(ystar(0,1)) post
+
+Predictive margins
+
+Number of strata = 105                           Number of obs   =       9,722
+Number of PSUs   = 355                           Population size = 150,174,574
+                                                 Subpop. no. obs =       9,422
+                                                 Subpop. size    =           .
+Model VCE: Linearized                            Design df       =         250
+
+Expression: E(tele_share*|0<tele_share<1), predict(ystar(0,1))
+1._at: year = 2021
+2._at: year = 2022
+3._at: year = 2023
+
+------------------------------------------------------------------------------------------
+                         |            Delta-method
+                         |     Margin   std. err.      t    P>|t|     [95% conf. interval]
+-------------------------+----------------------------------------------------------------
+              _at#povcat |
+         1#<100% (Poor)  |   .0256165    .005295     4.84   0.000     .0151879     .036045
+1#100–199% (Low Income)  |   .0342429   .0052033     6.58   0.000      .023995    .0444908
+    1#200–399% (Middle)  |   .0371403   .0052188     7.12   0.000     .0268619    .0474187
+         1#400%+ (High)  |   .0435419   .0050872     8.56   0.000     .0335227    .0535611
+         2#<100% (Poor)  |   .0181367   .0038936     4.66   0.000     .0104683    .0258051
+2#100–199% (Low Income)  |   .0246334   .0040695     6.05   0.000     .0166185    .0326482
+    2#200–399% (Middle)  |   .0268401   .0041175     6.52   0.000     .0187306    .0349496
+         2#400%+ (High)  |   .0317544   .0040509     7.84   0.000     .0237762    .0397326
+         3#<100% (Poor)  |   .0172447    .004568     3.78   0.000      .008248    .0262414
+3#100–199% (Low Income)  |   .0234751   .0038919     6.03   0.000     .0158101    .0311401
+    3#200–399% (Middle)  |   .0255947   .0041832     6.12   0.000     .0173559    .0338335
+         3#400%+ (High)  |   .0303204   .0051963     5.83   0.000     .0200863    .0405545
+                         |
+           _at#insurance |
+              1#Private  |   .0394559   .0035246    11.19   0.000     .0325142    .0463975
+          1#Public only  |   .0351322   .0054697     6.42   0.000     .0243596    .0459048
+            1#Uninsured  |   .0104767   .0070811     1.48   0.140    -.0034696     .024423
+              2#Private  |   .0286095   .0030968     9.24   0.000     .0225103    .0347087
+          2#Public only  |   .0253078   .0039669     6.38   0.000     .0174951    .0331205
+            2#Uninsured  |   .0070874   .0049924     1.42   0.157    -.0027452      .01692
+              3#Private  |   .0272952   .0040965     6.66   0.000     .0192272    .0353632
+          3#Public only  |   .0241226   .0042915     5.62   0.000     .0156706    .0325746
+            3#Uninsured  |   .0066952   .0046497     1.44   0.151    -.0024622    .0158527
+------------------------------------------------------------------------------------------
+
+. 
+. 
+. *---------------------------------------------------------------*
+. * 5.   Plot predicted telehealth share
+. *---------------------------------------------------------------*
+. marginsplot, ///
+>     title("Predicted Telehealth Share by SES and Year") ///
+>     ytitle("Expected Telehealth Share (0–1)") ///
+>     xtitle("SES / Insurance Groups") ///
+>     name(model4_tobit_plot, replace)
+
+Variables that uniquely identify margins: year povcat insurance
+
+. 
+. 
+. **# --> [NEW] Model 5: Interaction Analysis
+. /********************************************************************************************
+>     MODEL 5: Is the Poverty Gap Closing Over Time?
+>     Interaction: Poverty * Year
+> ********************************************************************************************/
+. * We remove i.povcat and i.year from the global for this specific command 
+. * to avoid collinearity/double entry when typing the interaction manually.
+. 
+. svy: nbreg tele_visits i.povcat##i.year i.insurance age i.female i.race_eth i.region i.cshcn i.h
+> ealth_status i.mental_health i.language_barrier if keep_child==1, irr
+(running nbreg on estimation sample)
+
+Survey: Negative binomial regression
+
+Number of strata = 105                           Number of obs   =       9,722
+Number of PSUs   = 355                           Population size = 150,174,574
+                                                 Design df       =         250
+                                                 F(26, 225)      =       20.90
+Dispersion: mean                                 Prob > F        =      0.0000
+
+---------------------------------------------------------------------------------------------
+                            |             Linearized
+                tele_visits |        IRR   std. err.      t    P>|t|     [95% conf. interval]
+----------------------------+----------------------------------------------------------------
+                     povcat |
+     100–199% (Low Income)  |   2.552538    1.52123     1.57   0.117     .7892528    8.255215
+         200–399% (Middle)  |   2.175008   1.313022     1.29   0.199     .6623728     7.14199
+              400%+ (High)  |   2.249761   1.225706     1.49   0.138     .7693643    6.578708
+                            |
+                       year |
+                      2022  |   .4109777   .2357537    -1.55   0.122      .132788    1.271972
+                      2023  |   .2397877   .1297416    -2.64   0.009     .0826091    .6960265
+                            |
+                povcat#year |
+100–199% (Low Income)#2022  |   1.715412    1.55304     0.60   0.552     .2883954    10.20348
+100–199% (Low Income)#2023  |    .623848   .4784532    -0.62   0.539     .1377475    2.825361
+    200–399% (Middle)#2022  |   .9720965     .73717    -0.04   0.970      .218312    4.328537
+    200–399% (Middle)#2023  |   1.134696   .9170946     0.16   0.876     .2309758    5.574326
+         400%+ (High)#2022  |   .6907966   .4661966    -0.55   0.584      .182855    2.609717
+         400%+ (High)#2023  |   2.101247   1.691351     0.92   0.357     .4305154     10.2557
+                            |
+                  insurance |
+               Public only  |   .9173508   .2175694    -0.36   0.716     .5750064    1.463518
+                 Uninsured  |   .0546612   .0381944    -4.16   0.000     .0138042    .2164452
+                            |
+                        age |   1.054093    .033262     1.67   0.096     .9905781    1.121681
+                            |
+                     female |
+                    Female  |   1.233284   .2164915     1.19   0.233     .8728015    1.742651
+                            |
+                   race_eth |
+                  NH White  |   .8123887   .2064595    -0.82   0.414     .4924796    1.340107
+                  NH Black  |   .4221699   .1358289    -2.68   0.008     .2240214    .7955822
+                  NH Asian  |   .2081792   .1072083    -3.05   0.003      .075501    .5740135
+         NH Other/Multiple  |   1.053918   .3160142     0.18   0.861     .5838952    1.902298
+                            |
+                     region |
+                   Midwest  |   .6380884   .2107785    -1.36   0.175     .3329181    1.222994
+                     South  |   1.313901   .4337599     0.83   0.409      .685784    2.517317
+                      West  |   1.281488   .3642957     0.87   0.384     .7320854    2.243197
+                            |
+                      cshcn |
+                       Yes  |   11.11916   2.621258    10.22   0.000     6.989267    17.68938
+                            |
+              health_status |
+                 Fair/Poor  |   .7910361   .2691577    -0.69   0.492     .4047229     1.54609
+                            |
+              mental_health |
+                 Fair/Poor  |   2.046682   .5523256     2.65   0.008     1.202886    3.482382
+         1.language_barrier |    .326585   .1218172    -3.00   0.003     .1566575    .6808343
+                      _cons |   .0880255    .059195    -3.61   0.000     .0234106    .3309824
+----------------------------+----------------------------------------------------------------
+                   /lnalpha |   3.282069   .0789165                      3.126643    3.437495
+----------------------------+----------------------------------------------------------------
+                      alpha |   26.63082   2.101612                      22.79733    31.10894
+---------------------------------------------------------------------------------------------
+Note: Estimates are transformed only in the first equation to incidence-rate ratios.
+Note: _cons estimates baseline incidence rate.
+
+. 
+. * Check the predictive margins of the interaction
+. margins i.povcat#i.year
+
+Predictive margins
+
+Number of strata = 105                           Number of obs   =       9,722
+Number of PSUs   = 355                           Population size = 150,174,574
+                                                 Subpop. no. obs =       9,422
+                                                 Subpop. size    =           .
+Model VCE: Linearized                            Design df       =         250
+
+Expression: Predicted number of events, predict()
+
+---------------------------------------------------------------------------------------------
+                            |            Delta-method
+                            |     Margin   std. err.      t    P>|t|     [95% conf. interval]
+----------------------------+----------------------------------------------------------------
+                povcat#year |
+         <100% (Poor)#2021  |   .4800394   .2014918     2.38   0.018     .0832017     .876877
+         <100% (Poor)#2022  |   .1972855   .1091219     1.81   0.072    -.0176299    .4122008
+         <100% (Poor)#2023  |   .1151075    .042795     2.69   0.008     .0308229    .1993922
+100–199% (Low Income)#2021  |   1.225319   .5744959     2.13   0.034       .09385    2.356788
+100–199% (Low Income)#2022  |    .863845   .3713787     2.33   0.021     .1324151    1.595275
+100–199% (Low Income)#2023  |   .1832968   .0698819     2.62   0.009     .0456645     .320929
+    200–399% (Middle)#2021  |   1.044089   .4669947     2.24   0.026     .1243441    1.963835
+    200–399% (Middle)#2022  |   .4171241   .1548012     2.69   0.008     .1122433    .7220049
+    200–399% (Middle)#2023  |   .2840822   .0845535     3.36   0.001     .1175542    .4506101
+         400%+ (High)#2021  |   1.079974   .3442209     3.14   0.002     .4020311    1.757916
+         400%+ (High)#2022  |   .3066067    .066965     4.58   0.000     .1747193    .4384941
+         400%+ (High)#2023  |   .5441481   .2297901     2.37   0.019     .0915769    .9967193
+---------------------------------------------------------------------------------------------
+
+. marginsplot, ///
+>     title("Telehealth Trends by Poverty Level (2021–2023)") ///
+>     ytitle("Predicted Visits") ///
+>     xtitle("Year") ///
+>     legend(order(1 "Poor" 2 "Low Inc" 3 "Middle" 4 "High Inc")) ///
+>     name(interaction_plot, replace)
+
+Variables that uniquely identify margins: povcat year
+
+. 
+. 
+. 
+. 
+. //
+. log close
+      name:  <unnamed>
+> ts/03 Projects/04b Telemental MEPS/LOG/MEPS_merge_setup_2021__7_Dec_2025.log
+  log type:  text
+ closed on:   7 Dec 2025, 15:32:33
+--------------------------------------------------------------------------------------------------
